@@ -15,25 +15,18 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Exception while handling an update:", exc_info=context.error)
 
 async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
+    """هر ۲۰ ثانیه یک مقاله جدید را برای تایید اولیه به ادمین اصلی ارسال می‌کند."""
     db: Session = next(get_db())
     article = None
     try:
         article = db.query(Article).filter(Article.status == 'new').order_by(Article.id).first()
         if not article: return
 
-        logger.info(f"Translating title for article {article.id}...")
-        try:
-            task_result = translate_title_task.delay(article.original_title)
-            translated_title = task_result.get(timeout=20)
-            article.translated_title = translated_title
-        except Exception as e:
-            logger.error(f"Title translation failed for article {article.id}. Skipping. Error: {e}")
-            article.status = 'failed'; db.commit()
-            return
-
         article.status = 'pending_initial_approval'; db.commit()
+        logger.info(f"Sending article {article.id} for initial approval.")
         
-        caption = f"📣 *{escape_markdown(article.translated_title)}*\n\nمنبع: `{escape_markdown(article.source_name)}`"
+        # اصلاح: از عنوان اصلی استفاده می‌کند
+        caption = f"📣 *{escape_markdown(article.original_title)}*\n\nمنبع: `{escape_markdown(article.source_name)}`"
         keyboard = [[
             InlineKeyboardButton("✅ تأیید", callback_data=f"approve_{article.id}"),
             InlineKeyboardButton("❌ رد", callback_data=f"reject_{article.id}"),
@@ -51,7 +44,7 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         db.rollback(); logger.error(f"Error in send_new_articles_to_admin job: {e}")
     finally:
-        if 'db' in locals() and db.is_active: db.close()
+        if db.is_active: db.close()
 
 async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
     """هر ۳۰ ثانیه یک مقاله پردازش شده را برای تایید نهایی به ادمین مربوطه ارسال می‌کند."""
