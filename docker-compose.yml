@@ -1,0 +1,67 @@
+# docker-compose.yml
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: robopost-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: robopost-redis
+    restart: always
+
+  bot:
+    build: .
+    container_name: robopost-bot
+    restart: always
+    command: ["python", "bot.py"]
+    env_file: .env
+    volumes:
+      - .:/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+  
+  scheduler:
+    build: .
+    container_name: robopost-scheduler
+    restart: always
+    command: ["python", "scheduler.py"]
+    env_file: .env
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    container_name: robopost-worker
+    restart: always
+    command: ["celery", "-A", "celery_app.celery_app", "worker", "--loglevel=info", "-c", "2"]
+    env_file: .env
+    volumes:
+      - .:/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    deploy:
+      replicas: 1
+
+volumes:
+  mysql-data:

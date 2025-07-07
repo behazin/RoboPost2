@@ -1,0 +1,32 @@
+# requirements.txt
+python-telegram-bot[job-queue]
+python-dotenv
+
+# Database & Migrations
+mysql-connector-python
+sqlalchemy
+alembic
+
+# Task Queue
+celery
+redis
+
+# Scheduler
+schedule
+
+# Fetching & Parsing
+feedparser
+newspaper3k==0.2.8  # این نسخه به دلیل پایداری ثابت نگه داشته می‌شود
+lxml_html_clean
+tldextract
+requests
+beautifulsoup4
+
+# Google AI
+google-cloud-translate
+google-cloud-aiplatform
+protobuf
+
+# Settings Management
+pydantic
+pydantic-settings
