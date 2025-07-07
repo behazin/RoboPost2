@@ -1,6 +1,7 @@
 # tasks.py
 import feedparser
 import requests
+import json
 from newspaper import Article as NewspaperArticle, ArticleException
 from celery.utils.log import get_task_logger
 from sqlalchemy.orm import Session
@@ -61,20 +62,20 @@ def fetch_source_task(source_id: int):
                     temp_article.download(input_html=requests.get(entry.link, headers=headers, timeout=15).text)
                     temp_article.parse()
                     top_image = temp_article.top_image
-                except Exception: pass
+                except Exception:
+                    pass
                 db.add(Article(source_name=source.name, original_url=entry.link, original_title=entry.title, image_url=top_image, status='new'))
                 db.commit()
                 logger.info(f"NEW ARTICLE from {source.name}: {entry.title}")
     except Exception as e:
-        logger.error(f"Failed to fetch source {source_id}: {e}")
+        logger.error(f"Failed to fetch source {source_id} ({source.name}): {e}")
     finally:
         db.close()
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=3, countdown=10)
 def translate_text_task(self, text: str, prompt_text: str) -> str:
-    """یک وظیفه عمومی برای ترجمه متن با پرامپت مشخص."""
     if not text: return ""
-    logger.info(f"Translating/Summarizing text (first 50 chars): {text[:50]}...")
+    logger.info(f"LLM task started (first 50 chars): {text[:50]}...")
     llm = get_llm_model()
     if not llm: raise ConnectionError("LLM model is not available.")
     
@@ -103,22 +104,16 @@ def process_article_task(self, article_id: int):
                 db.commit()
             except Exception as e:
                 raise ValueError(f"Newspaper parse failed: {e}")
-        
-        # ترجمه عنوان با پرامپت ساده
-        title_prompt = "Translate the following English title to fluent Persian. Return only the translated text:"
-        translated_title = translate_text_task.delay(article.original_title, title_prompt).get(timeout=30)
-        article.translated_title = translated_title
 
-        # ترجمه محتوای کامل با پرامپت ساده
-        content_prompt = "Translate the following English article content to fluent and natural Persian. Return only the translated text:"
-        translated_content = translate_text_task.delay(article.original_content, content_prompt).get(timeout=120)
+        # ترجمه و خلاصه‌سازی با دو فراخوانی مجزا و ساده
+        translate_prompt = "Translate the following English article content to fluent and natural Persian. Return only the translated text:"
+        summary_prompt = get_prompt("prompt.txt")
+
+        translated_content = translate_text_task.delay(article.original_content, translate_prompt).get(timeout=120)
+        summary = translate_text_task.delay(translated_content, summary_prompt).get(timeout=120)
+        
         article.translated_content = translated_content
-
-        # خلاصه‌سازی محتوای ترجمه شده
-        summary_prompt_template = get_prompt("prompt.txt")
-        summary = translate_text_task.delay(translated_content, summary_prompt_template).get(timeout=120)
         article.summary = summary
-        
         article.status = 'pending_publication'
         db.commit()
         

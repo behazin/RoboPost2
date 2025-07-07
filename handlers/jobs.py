@@ -5,13 +5,14 @@ from telegram.constants import ParseMode
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
-from utils import escape_markdown, logger
+from utils import escape_markdown, escape_html, logger
 from core.database import get_db
-from core.db_models import Article, Source, Channel
+from core.db_models import Article, Source
 from core.config import settings
-from tasks import translate_title_task # <--- import صحیح
+from tasks import translate_text_task
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """لاگ کردن خطاهای عمومی کتابخانه تلگرام."""
     logger.error(f"Exception while handling an update:", exc_info=context.error)
 
 async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
@@ -22,11 +23,23 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
         article = db.query(Article).filter(Article.status == 'new').order_by(Article.id).first()
         if not article: return
 
-        article.status = 'pending_initial_approval'; db.commit()
-        logger.info(f"Sending article {article.id} for initial approval.")
+        # مرحله ۱: ترجمه عنوان
+        title_prompt = "Translate the following English title to fluent Persian. Return only the translated text:"
+        try:
+            translated_title = translate_text_task.delay(article.original_title, title_prompt).get(timeout=30)
+        except Exception as e:
+            logger.error(f"Title translation task failed for article {article.id}. Skipping. Error: {e}")
+            article.status = 'failed'
+            db.commit()
+            return
+            
+        # مرحله ۲: آپدیت دیتابیس و ارسال به ادمین
+        article.translated_title = translated_title
+        article.status = 'pending_initial_approval'
+        db.commit()
+        logger.info(f"Sending article {article.id} for initial approval with translated title.")
         
-        # اصلاح: از عنوان اصلی استفاده می‌کند
-        caption = f"📣 *{escape_markdown(article.original_title)}*\n\nمنبع: `{escape_markdown(article.source_name)}`"
+        caption = f"📣 *{escape_markdown(translated_title)}*\n\nمنبع: `{escape_markdown(article.source_name)}`"
         keyboard = [[
             InlineKeyboardButton("✅ تأیید", callback_data=f"approve_{article.id}"),
             InlineKeyboardButton("❌ رد", callback_data=f"reject_{article.id}"),
@@ -41,24 +54,29 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=admin_id, text=caption, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
             except Exception as e:
                 logger.warning(f"Failed to send initial approval to admin {admin_id}: {e}")
+    
     except Exception as e:
-        db.rollback(); logger.error(f"Error in send_new_articles_to_admin job: {e}")
+        if 'db' in locals() and db.is_active: db.rollback()
+        logger.error(f"Error in send_new_articles_to_admin job: {e}", exc_info=True)
     finally:
-        if db.is_active: db.close()
+        if 'db' in locals() and db.is_active: db.close()
 
 async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
     """هر ۳۰ ثانیه یک مقاله پردازش شده را برای تایید نهایی به ادمین مربوطه ارسال می‌کند."""
     db: Session = next(get_db())
+    article = None
     try:
         article = db.query(Article).filter(Article.status == 'pending_publication').order_by(Article.id).first()
         if not article: return
 
         source = db.query(Source).filter(Source.name == article.source_name).first()
         if not source or not source.channels:
-            article.status = 'archived_unlinked'; db.commit()
+            article.status = 'archived_unlinked'
+            db.commit()
             logger.warning(f"Article {article.id} has no linked channels. Archiving."); return
 
-        article.status = 'sent_for_publication'; db.commit()
+        article.status = 'sent_for_publication'
+        db.commit()
         
         for channel in source.channels:
             if not channel.is_active: continue
@@ -69,7 +87,7 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
                              f"<b>مقصد: {escape_html(channel.name)}</b>")
             
             keyboard = [[
-                InlineKeyboardButton(f"🚀 انتشار", callback_data=f"publish_{article.id}_{channel.id}"),
+                InlineKeyboardButton(f"🚀 انتشار در {channel.name}", callback_data=f"publish_{article.id}_{channel.id}"),
                 InlineKeyboardButton("🗑️ لغو", callback_data=f"discard_{article.id}"),
             ]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -83,11 +101,10 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"Failed to send final approval for article {article.id} to admin group {channel.admin_group_id}: {e}")
     except Exception as e:
-        db.rollback()
+        if 'db' in locals() and db.is_active: db.rollback()
         logger.error(f"Error in send_final_approval_to_admin job: {e}")
-        if 'article' in locals() and article: article.status = 'pending_publication'; db.commit()
     finally:
-        db.close()
+        if 'db' in locals() and db.is_active: db.close()
 
 async def cleanup_db_job(context: ContextTypes.DEFAULT_TYPE):
     """مقالات قدیمی را از دیتابیس پاک می‌کند."""

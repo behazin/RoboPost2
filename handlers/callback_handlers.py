@@ -1,28 +1,21 @@
-# handlers/callback_handlers.py (نسخه نهایی و کاملاً عملیاتی)
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+# handlers/callback_handlers.py
+from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from sqlalchemy.orm import Session
-
 from utils import escape_html, escape_markdown, logger
 from core.database import get_db
 from core.db_models import Article, Channel
 from tasks import process_article_task
 
-async def edit_message_safely(query: Update.callback_query, new_text: str, **kwargs):
-    """
-    یک تابع کمکی برای ویرایش هوشمند پیام. اگر پیام عکس داشته باشد کپشن را ویرایش می‌کند،
-    در غیر این صورت متن پیام را ویرایش می‌کند.
-    """
+async def edit_message_safely(query, new_text, **kwargs):
     try:
         if query.message.photo:
             await query.edit_message_caption(caption=new_text, **kwargs)
         else:
             await query.edit_message_text(text=new_text, **kwargs)
     except TelegramError as e:
-        # اگر پیام خیلی قدیمی باشد یا تغییری نکرده باشد، تلگرام خطا می‌دهد.
-        # ما این خطا را نادیده می‌گیریم تا از لاگ‌های اضافی جلوگیری کنیم.
         if "message is not modified" not in str(e).lower():
             logger.warning(f"Could not edit message: {e}")
 
