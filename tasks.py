@@ -26,13 +26,23 @@ def get_llm_model():
             _llm_model = GenerativeModel(settings.GEMINI_MODEL_NAME)
             logger.info(f"Vertex AI Model ({settings.GEMINI_MODEL_NAME}) initialized in worker.")
         except Exception as e:
-            logger.critical(f"FATAL: Could not initialize Vertex AI Model: {e}")
+            logger.critical(f"FATAL: Could not initialize Vertex AI Model in worker: {e}", exc_info=True)
     return _llm_model
 
 def get_prompt(filename: str) -> str:
     try:
         with open(filename, "r", encoding="utf-8") as f: return f.read().strip()
     except FileNotFoundError: return ""
+
+def _call_llm(prompt_text: str):
+    llm = get_llm_model()
+    if not llm: raise ConnectionError("LLM model is not available.")
+    try:
+        response = llm.generate_content(prompt_text)
+        return response.text.strip()
+    except Exception as e:
+        logger.error(f"LLM call failed: {e}")
+        raise
 
 @celery_app.task
 def run_all_fetchers_task():
@@ -70,17 +80,6 @@ def fetch_source_task(source_id: int):
     finally:
         db.close()
 
-def _call_llm(prompt_text: str):
-    """یک تابع داخلی امن برای فراخوانی Gemini که وظیفه Celery نیست."""
-    llm = get_llm_model()
-    if not llm: raise ConnectionError("LLM model is not available.")
-    try:
-        response = llm.generate_content(prompt_text)
-        return response.text.strip()
-    except Exception as e:
-        logger.error(f"LLM call failed: {e}")
-        raise
-
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=180)
 def process_article_task(self, article_id: int):
     logger.info(f"Starting full processing for article_id: {article_id}")
@@ -89,7 +88,6 @@ def process_article_task(self, article_id: int):
     try:
         if not article: return
         
-        # 1. دانلود محتوای کامل
         if not article.original_content:
             try:
                 news_article = NewspaperArticle(article.original_url, language='en')
