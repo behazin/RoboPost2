@@ -1,7 +1,6 @@
 # tasks.py
 import feedparser
 import requests
-import json
 from newspaper import Article as NewspaperArticle
 from celery.utils.log import get_task_logger
 from sqlalchemy.orm import Session
@@ -15,6 +14,7 @@ logger = get_task_logger(__name__)
 _llm_model = None
 
 def get_llm_model():
+    """یک نمونه از مدل Gemini را در worker مقداردهی اولیه کرده و بازمی‌گرداند."""
     global _llm_model
     if _llm_model is None:
         from google.oauth2 import service_account
@@ -30,11 +30,13 @@ def get_llm_model():
     return _llm_model
 
 def get_prompt(filename: str) -> str:
+    """محتوای یک فایل پرامپت را می‌خواند."""
     try:
         with open(filename, "r", encoding="utf-8") as f: return f.read().strip()
     except FileNotFoundError: return ""
 
 def _call_llm(prompt_text: str):
+    """یک تابع داخلی امن برای فراخوانی Gemini که وظیفه Celery نیست."""
     llm = get_llm_model()
     if not llm: raise ConnectionError("LLM model is not available.")
     try:
@@ -82,12 +84,14 @@ def fetch_source_task(source_id: int):
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=180)
 def process_article_task(self, article_id: int):
+    """وظیفه اصلی پردازش مقاله پس از تایید اولیه."""
     logger.info(f"Starting full processing for article_id: {article_id}")
     db: Session = SessionLocal()
     article = db.query(Article).filter(Article.id == article_id).first()
     try:
         if not article: return
         
+        # 1. دانلود محتوا
         if not article.original_content:
             try:
                 news_article = NewspaperArticle(article.original_url, language='en')
@@ -118,7 +122,7 @@ def process_article_task(self, article_id: int):
         
         logger.info(f"Article {article.id} processed successfully. Ready for final approval.")
     except Exception as e:
-        logger.error(f"Critical error processing article {article.id}: {e}", exc_info=True)
+        logger.error(f"Critical error processing article {article_id}: {e}", exc_info=True)
         if article: article.status = 'failed'; db.commit()
         raise self.retry(exc=e)
     finally:

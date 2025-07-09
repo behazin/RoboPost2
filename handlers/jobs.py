@@ -1,6 +1,6 @@
 # handlers/jobs.py
 from telegram.ext import ContextTypes
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -10,10 +10,10 @@ from core.database import get_db
 from core.db_models import Article, Source, Channel
 from core.config import settings
 
-# --- بخش جدید: تابع کمکی برای ترجمه غیرهمزمان در خود ربات ---
+# --- تابع کمکی جدید برای ترجمه غیرهمزمان عنوان در خود ربات ---
 _llm_model_bot = None
 
-async def translate_title_in_bot(title: str) -> str:
+async def _translate_title_in_bot(title: str) -> str:
     """یک تابع async برای ترجمه عنوان که مستقیما در پروسه bot اجرا می‌شود."""
     global _llm_model_bot
     if _llm_model_bot is None:
@@ -53,7 +53,7 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
 
         # اصلاح کلیدی: ترجمه عنوان به صورت غیرهمزمان قبل از ارسال
         logger.info(f"Translating title for article {article.id} directly in bot job...")
-        translated_title = await translate_title_in_bot(article.original_title)
+        translated_title = await _translate_title_in_bot(article.original_title)
             
         article.translated_title = translated_title
         article.status = 'pending_initial_approval'
@@ -85,9 +85,13 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
     finally:
         if 'db' in locals() and db.is_active: db.close()
 
+# ... (کد کامل توابع send_final_approval_to_admin و cleanup_db_job بدون تغییر باقی می‌ماند) ...
+# آنها را از پاسخ‌های جامع قبلی کپی کنید.
+
 async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
     """مقاله پردازش شده را پیدا کرده و پیام اولیه ادمین را ویرایش می‌کند."""
     db: Session = next(get_db())
+    article = None
     try:
         article = db.query(Article).filter(Article.status == 'pending_publication').order_by(Article.id).first()
         if not article or not article.admin_chat_id or not article.admin_message_id:
@@ -115,20 +119,28 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard_rows)
 
         try:
-            # ویرایش پیام قبلی با پیش‌نمایش نهایی
-            await context.bot.edit_message_caption(
-                chat_id=article.admin_chat_id,
-                message_id=article.admin_message_id,
-                caption=final_caption,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
+            # تشخیص هوشمند اینکه پیام اولیه عکس داشته یا نه
+            is_photo = True if article.image_url else False
+            if is_photo:
+                await context.bot.edit_message_caption(
+                    chat_id=article.admin_chat_id,
+                    message_id=article.admin_message_id,
+                    caption=final_caption,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await context.bot.edit_message_text(
+                    chat_id=article.admin_chat_id,
+                    message_id=article.admin_message_id,
+                    text=final_caption,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=True
+                )
             logger.info(f"Edited message for final approval of article {article.id}")
         except Exception as e:
-            # اگر ویرایش پیام اولیه (که عکس داشت) ممکن نبود، پیام جدید ارسال کن
-            logger.warning(f"Could not edit original message for article {article.id}, sending a new one. Error: {e}")
-            for admin_id in settings.admin_ids_list:
-                await context.bot.send_message(chat_id=admin_id, text=final_caption, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+            logger.error(f"Failed to edit final approval message for article {article.id}: {e}", exc_info=True)
     
     except Exception as e:
         if 'db' in locals() and db.is_active: db.rollback()
@@ -136,42 +148,19 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
     finally:
         if 'db' in locals() and db.is_active: db.close()
 
-
 async def cleanup_db_job(context: ContextTypes.DEFAULT_TYPE):
-    """مقالات قدیمی را از دیتابیس بر اساس وضعیت و قدمتشان پاک می‌کند."""
-    logger.info("Running scheduled job to clean up old articles...")
+    """مقالات قدیمی را از دیتابیس پاک می‌کند."""
     db: Session = next(get_db())
     try:
         now = datetime.utcnow()
-        
-        # حذف مقالات رد شده یا ناموفق قدیمی‌تر از ۲ روز
-        deleted_rejected = db.query(Article).filter(
-            Article.status.in_(['rejected', 'discarded', 'failed']),
-            Article.created_at < now - timedelta(days=2)
-        ).delete(synchronize_session=False)
-
-        # حذف مقالات جدید که بیش از ۱ روز در صف مانده‌اند
-        deleted_new = db.query(Article).filter(
-            Article.status.in_(['new', 'pending_initial_approval']),
-            Article.created_at < now - timedelta(days=1)
-        ).delete(synchronize_session=False)
-
-        # حذف مقالات منتشر شده قدیمی‌تر از ۷ روز
-        deleted_published = db.query(Article).filter(
-            Article.status == 'published',
-            Article.created_at < now - timedelta(days=7)
-        ).delete(synchronize_session=False)
-
+        deleted_rejected = db.query(Article).filter(Article.status.in_(['rejected', 'discarded', 'failed']), Article.created_at < now - timedelta(days=2)).delete(synchronize_session=False)
+        deleted_new = db.query(Article).filter(Article.status.in_(['new','pending_initial_approval']), Article.created_at < now - timedelta(days=1)).delete(synchronize_session=False)
+        deleted_published = db.query(Article).filter(Article.status == 'published', Article.created_at < now - timedelta(days=7)).delete(synchronize_session=False)
         db.commit()
-        
         total_deleted = (deleted_rejected or 0) + (deleted_new or 0) + (deleted_published or 0)
         if total_deleted > 0:
             logger.info(f"Successfully deleted {total_deleted} old articles.")
-        else:
-            logger.info("No old articles to delete.")
-            
     except Exception as e:
-        db.rollback()
-        logger.error(f"Failed to cleanup old articles: {e}", exc_info=True)
+        db.rollback(); logger.error(f"Failed to cleanup old articles: {e}")
     finally:
         db.close()
