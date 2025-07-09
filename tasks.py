@@ -63,7 +63,7 @@ def fetch_source_task(source_id: int):
         logger.info(f"Fetching: {source.name}")
         headers = {'User-Agent': 'Mozilla/5.0'}
         feed = feedparser.parse(source.rss_url)
-        for entry in feed.entries[:5]:
+        for entry in feed.entries[:30]:
             if not db.query(Article).filter(Article.original_url == entry.link).first():
                 top_image = None
                 try:
