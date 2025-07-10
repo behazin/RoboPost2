@@ -1,18 +1,18 @@
-"""Create initial project tables
+"""Create initial tables
 
-Revision ID: 1510d2661668
+Revision ID: c517e9f6d003
 Revises: 
-Create Date: 2025-07-08 00:42:33.264900
+Create Date: 2025-07-09 23:57:07.572731
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
+from sqlalchemy.dialects import mysql
 
 # revision identifiers, used by Alembic.
-revision: str = '1510d2661668'
+revision: str = 'c517e9f6d003'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -26,11 +26,11 @@ def upgrade() -> None:
     sa.Column('source_name', sa.String(length=255), nullable=False),
     sa.Column('original_url', sa.String(length=2048), nullable=False),
     sa.Column('original_title', sa.Text(), nullable=False),
-    sa.Column('original_content', sa.Text(), nullable=True),
+    sa.Column('original_content', mysql.LONGTEXT(), nullable=True),
     sa.Column('image_url', sa.String(length=2048), nullable=True),
     sa.Column('status', sa.String(length=50), nullable=True),
     sa.Column('translated_title', sa.Text(), nullable=True),
-    sa.Column('translated_content', sa.Text(), nullable=True),
+    sa.Column('translated_content', mysql.LONGTEXT(), nullable=True),
     sa.Column('summary', sa.Text(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('admin_chat_id', sa.BigInteger(), nullable=True),

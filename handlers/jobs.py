@@ -9,7 +9,6 @@ from utils import escape_markdown, escape_html, logger
 from core.database import get_db
 from core.db_models import Article, Source, Channel
 from core.config import settings
-from tasks import process_article_task 
 
 # --- تابع کمکی جدید برای ترجمه غیرهمزمان عنوان در خود ربات ---
 _llm_model_bot = None
@@ -45,17 +44,22 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Exception while handling an update:", exc_info=context.error)
 
 async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
-    """هر ۲۰ ثانیه یک مقاله جدید با عنوان اصلی (انگلیسی) برای تایید اولیه ارسال می‌کند."""
+    """مقالات جدید را با عنوان ترجمه شده برای تایید اولیه ارسال می‌کند."""
     db: Session = next(get_db())
     article = None
     try:
         article = db.query(Article).filter(Article.status == 'new').order_by(Article.id).first()
         if not article: return
 
+        # اصلاح کلیدی: ترجمه عنوان به صورت غیرهمزمان قبل از ارسال
+        logger.info(f"Translating title for article {article.id} directly in bot job...")
+        translated_title = await _translate_title_in_bot(article.original_title)
+            
+        article.translated_title = translated_title
         article.status = 'pending_initial_approval'
         db.commit()
         
-        caption = f"📣 *{escape_markdown(article.original_title)}*\n\nمنبع: `{escape_markdown(article.source_name)}`"
+        caption = f"📣 *{escape_markdown(translated_title)}*\n\nمنبع: `{escape_markdown(article.source_name)}`"
         keyboard = [[
             InlineKeyboardButton("✅ تأیید و پردازش", callback_data=f"approve_{article.id}"),
             InlineKeyboardButton("❌ رد", callback_data=f"reject_{article.id}"),
@@ -71,11 +75,18 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=admin_id, text=caption, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
             except Exception as e:
                 logger.warning(f"Failed to send initial approval to admin {admin_id}: {e}")
+    
     except Exception as e:
-        if db.is_active: db.rollback()
-        logger.error(f"Error in send_new_articles_to_admin job: {e}")
+        if 'db' in locals() and db.is_active: db.rollback()
+        if article: # اگر مقاله انتخاب شده بود اما در ادامه خطا داد، به وضعیت new برگردان
+            article.status = 'new'
+            db.commit()
+        logger.error(f"Error in send_new_articles_to_admin job: {e}", exc_info=True)
     finally:
-        if db.is_active: db.close()
+        if 'db' in locals() and db.is_active: db.close()
+
+# ... (کد کامل توابع send_final_approval_to_admin و cleanup_db_job بدون تغییر باقی می‌ماند) ...
+# آنها را از پاسخ‌های جامع قبلی کپی کنید.
 
 async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
     """مقاله پردازش شده را پیدا کرده و پیام اولیه ادمین را ویرایش می‌کند."""
