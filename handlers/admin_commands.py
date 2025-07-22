@@ -102,7 +102,7 @@ async def list_sources(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = "📚 *لیست منابع خبری:*\n\n"
         for s in sources:
             status = "✅" if s.is_active else "❌"
-            message += f"ID: `{s.id}` | {escape_markdown(s.name)} - *{status}*\n"
+            message += f"ID: `{s.id}` \| {escape_markdown(s.name)} - *{status}*\n"
         await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
     finally:
         db.close()
@@ -172,7 +172,10 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = "📺 *لیست کانال‌های مقصد:*\n\n"
         for ch in channels:
             status = "✅" if ch.is_active else "❌"
-            message += f"ID: `{ch.id}` | {escape_markdown(ch.name)} ({escape_markdown(ch.telegram_channel_id)}) - زبان: `{ch.target_language_code}` - *{status}*\n"
+            message += (
+                f"ID: `{ch.id}` | {escape_markdown(ch.name)} "
+                f"\\({escape_markdown(ch.telegram_channel_id)}\\) - زبان: `{ch.target_language_code}` - *{status}*\n"
+            )
         await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
     finally:
         db.close()

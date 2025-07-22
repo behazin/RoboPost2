@@ -91,9 +91,11 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
         db.commit()
         
         score_stars = "⭐️" * (score // 2) if score else " (بدون نمره)"
-        caption = (f"📣 *{escape_markdown(translated_title)}*\n\n"
-                   f"منبع: `{escape_markdown(article.source_name)}`\n"
-                   f"ارزش خبری: {escape_markdown(str(score))}/10 {score_stars}")
+        caption = (
+            f"📣 *{escape_markdown(translated_title)}*\n\n"
+            f"منبع: `{escape_markdown(article.source_name)}`\n"
+            f"ارزش خبری: {escape_markdown(str(score))}/10 {escape_markdown(score_stars)}"
+        )
 
         keyboard = [[
             InlineKeyboardButton("✅ تأیید و پردازش", callback_data=f"approve_{article.id}"),
