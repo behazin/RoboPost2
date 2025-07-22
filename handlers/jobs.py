@@ -12,7 +12,6 @@ from core.db_models import Article, Source, Channel
 from core.config import settings
 from tasks import process_article_task
 
-# --- توابع کمکی برای فراخوانی غیرهمزمان Gemini در خود ربات ---
 _llm_model_bot = None
 
 async def _initialize_llm_in_bot():
@@ -180,6 +179,18 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
         if db.is_active: db.close()
 
 async def cleanup_db_job(context: ContextTypes.DEFAULT_TYPE):
-    # ... (کد این تابع صحیح است و نیازی به تغییر ندارد) ...
-    pass
-# . . . پایان است
+    """مقالات قدیمی را از دیتابیس پاک می‌کند."""
+    db: Session = next(get_db())
+    try:
+        now = datetime.utcnow()
+        deleted_rejected = db.query(Article).filter(Article.status.in_(['rejected', 'discarded', 'failed']), Article.created_at < now - timedelta(days=2)).delete(synchronize_session=False)
+        deleted_new = db.query(Article).filter(Article.status.in_(['new','pending_initial_approval']), Article.created_at < now - timedelta(days=1)).delete(synchronize_session=False)
+        deleted_published = db.query(Article).filter(Article.status == 'published', Article.created_at < now - timedelta(days=7)).delete(synchronize_session=False)
+        db.commit()
+        total_deleted = (deleted_rejected or 0) + (deleted_new or 0) + (deleted_published or 0)
+        if total_deleted > 0:
+            logger.info(f"Successfully deleted {total_deleted} old articles.")
+    except Exception as e:
+        db.rollback(); logger.error(f"Failed to cleanup old articles: {e}")
+    finally:
+        db.close()
