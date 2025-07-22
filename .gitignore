@@ -36,3 +36,4 @@ __pycache__/
 # ########## Alembic ##########
 # فایل‌های کش Alembic
 .alembic_cache/
+.DS_Store

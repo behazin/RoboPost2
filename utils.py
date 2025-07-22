@@ -19,10 +19,10 @@ logger = setup_logger()
 
 def escape_markdown(text: str) -> str:
     """کاراکترهای خاص را برای ارسال در مد MarkdownV2 تلگرام escape می‌کند."""
-    if not isinstance(text, str): return ""
+    if not isinstance(text, str):
+        return ""
     escape_chars = r'\\_*[]()~`>#+-=|{}.!'
-    # خود بک‌اسلش نیز باید escape شود
-    #return ''.join(f'\\{char}' if char in escape_chars else char for char in text)
+    return ''.join(f'\\{c}' if c in escape_chars else c for c in text)
 
 def escape_html(text: str) -> str:
     """کاراکترهای خاص را برای ارسال در مد HTML تلگرام escape می‌کند."""
