@@ -182,4 +182,4 @@ def score_title_task(self, article_id: int):
         logger.error(f"Failed to score title for article {article_id}: {e}")
         raise self.retry(exc=e)
     finally:
-        db.close()    
+        db.close()
