@@ -127,3 +127,47 @@ def process_article_task(self, article_id: int):
         raise self.retry(exc=e)
     finally:
         db.close()
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60)
+def translate_title_task(self, article_id: int):
+    """Translate only the article title and store it."""
+    db: Session = SessionLocal()
+    article = db.query(Article).filter(Article.id == article_id).first()
+    try:
+        if not article or article.translated_title:
+            return
+
+        prompt = f"{get_prompt('translate_prompt.txt')}\n{article.original_title}"
+        article.translated_title = _call_llm(prompt)
+        db.commit()
+        logger.info(f"Translated title for article {article_id}")
+    except Exception as e:
+        logger.error(f"Failed to translate title for article {article_id}: {e}")
+        raise self.retry(exc=e)
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60)
+def score_title_task(self, article_id: int):
+    """Score the article headline and store it."""
+    db: Session = SessionLocal()
+    article = db.query(Article).filter(Article.id == article_id).first()
+    try:
+        if not article or article.news_value_score is not None:
+            return
+
+        prompt = f"{get_prompt('score_prompt.txt')}\n{article.original_title}"
+        result = _call_llm(prompt)
+        try:
+            article.news_value_score = int(result)
+        except (ValueError, TypeError):
+            article.news_value_score = 0
+        db.commit()
+        logger.info(f"Scored title for article {article_id}")
+    except Exception as e:
+        logger.error(f"Failed to score title for article {article_id}: {e}")
+        raise self.retry(exc=e)
+    finally:
+        db.close()    

@@ -10,7 +10,7 @@ from utils import escape_markdown, escape_html, logger
 from core.database import get_db
 from core.db_models import Article, Source, Channel
 from core.config import settings
-from tasks import process_article_task
+from tasks import process_article_task, translate_title_task, score_title_task
 
 _llm_model_bot = None
 
@@ -61,9 +61,22 @@ async def _get_score(title: str) -> int:
         return int(response.text.strip())
     except (ValueError, TypeError, Exception) as e:
         logger.error(f"Could not get score for title '{title}': {e}")
-        return 0 # در صورت خطا، نمره پیش‌فرض صفر برمی‌گرداند
+    return 0 # در صورت خطا، نمره پیش‌فرض صفر برمی‌گرداند
 
-# -------------------------------------------------------------
+def dispatch_preprocess_tasks():
+    """Dispatch translation and scoring tasks for new articles."""
+    db: Session = next(get_db())
+    try:
+        articles = db.query(Article).filter(Article.status == 'new').all()
+        for article in articles:
+            if article.translated_title is None:
+                translate_title_task.delay(article.id)
+            if article.news_value_score is None:
+                score_title_task.delay(article.id)
+    except Exception as e:
+        logger.error(f"Failed to dispatch preprocess tasks: {e}")
+    finally:
+        db.close()
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Exception while handling an update:", exc_info=context.error)
@@ -73,19 +86,21 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
     db: Session = next(get_db())
     article = None
     try:
-        # اصلاح: مقالات بدون نمره را در اولویت قرار می‌دهد
-        article = db.query(Article).filter(Article.status == 'new', Article.news_value_score == None).order_by(Article.id).first()
-        if not article: return
+        # مقالاتی را انتخاب می‌کند که ترجمه و امتیازشان قبلاً محاسبه شده است
+        article = db.query(Article).filter(
+            Article.status == 'new',
+            Article.translated_title != None,
+            Article.news_value_score != None
+        ).order_by(Article.id).first()
+        if not article:
+            return
 
-        logger.info(f"Processing article {article.id} for scoring and translation...")
-        
-        # اجرای همزمان ترجمه و نمره‌دهی برای حداکثر سرعت
-        translation_task = _get_translation(article.original_title)
-        scoring_task = _get_score(article.original_title)
-        translated_title, score = await asyncio.gather(translation_task, scoring_task)
-            
-        article.translated_title = translated_title
-        article.news_value_score = score
+        logger.info(f"Sending article {article.id} for initial approval...")
+
+        score = article.news_value_score or 0
+        translated_title = article.translated_title or article.original_title
+
+
         article.status = 'pending_initial_approval'
         db.commit()
         
@@ -96,20 +111,32 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
             f"ارزش خبری: {escape_markdown(str(score))}/10 {escape_markdown(score_stars)}"
         )
 
-        keyboard = [[
-            InlineKeyboardButton("✅ تأیید و پردازش", callback_data=f"approve_{article.id}"),
-            InlineKeyboardButton("❌ رد", callback_data=f"reject_{article.id}"),
-        ]]
+        keyboard = [
+            [InlineKeyboardButton("✅ تأیید و پردازش", callback_data=f"approve_{article.id}"),
+             InlineKeyboardButton("❌ رد", callback_data=f"reject_{article.id}")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         logger.info(f"Sending article {article.id} for initial approval.")
+
         for admin_id in settings.admin_ids_list:
             try:
                 sent_message = None
                 if article.image_url:
-                    sent_message = await context.bot.send_photo(chat_id=admin_id, photo=article.image_url, caption=caption, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+                    sent_message = await context.bot.send_photo(
+                        chat_id=admin_id,
+                        photo=article.image_url,
+                        caption=caption,
+                        reply_markup=reply_markup,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                    )
                 else:
-                    sent_message = await context.bot.send_message(chat_id=admin_id, text=caption, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN_V2)
+                    sent_message = await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=caption,
+                        reply_markup=reply_markup,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                    )
                 
                 if sent_message and article.admin_chat_id is None:
                     article.admin_chat_id = sent_message.chat_id
