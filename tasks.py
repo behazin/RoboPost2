@@ -3,12 +3,13 @@ import feedparser
 import requests
 from newspaper import Article as NewspaperArticle
 from celery.utils.log import get_task_logger
+from celery import chord
 from sqlalchemy.orm import Session
 
 from celery_app import celery_app
 from core.database import SessionLocal
 from core.db_models import Source, Article
-from core.config import settings
+from core.config import settings    
 
 logger = get_task_logger(__name__)
 _llm_model = None
@@ -47,12 +48,23 @@ def _call_llm(prompt_text: str):
         raise
 
 @celery_app.task
+def dispatch_preprocess_tasks_task():
+    """Celery wrapper for dispatch_preprocess_tasks."""
+    from handlers.jobs import dispatch_preprocess_tasks
+    dispatch_preprocess_tasks()
+
+
+@celery_app.task
 def run_all_fetchers_task():
     logger.info("Scheduler triggered: Fetching all active sources.")
     db: Session = SessionLocal()
     try:
         active_sources = db.query(Source).filter(Source.is_active == True).all()
-        for source in active_sources: fetch_source_task.delay(source.id)
+        header = [fetch_source_task.s(source.id) for source in active_sources]
+        if header:
+            chord(header)(dispatch_preprocess_tasks_task.s())
+        else:
+            dispatch_preprocess_tasks_task.delay()
     finally:
         db.close()
 
