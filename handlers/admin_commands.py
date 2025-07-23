@@ -8,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from core.database import get_db
 from core.db_models import Source, Channel, Article
 from utils import logger, escape_markdown
-from tasks import run_all_fetchers_task
+import redis
+from core.config import settings
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """دستورات راهنما را برای ادمین ارسال می‌کند."""
@@ -260,7 +261,8 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.close()
 
 async def force_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """جمع‌آوری فوری اخبار را به صف Celery اضافه می‌کند."""
+    """جمع‌آوری فوری اخبار را از طریق Pub/Sub اعلام می‌کند."""
     logger.info(f"Manual fetch triggered by admin {update.effective_user.id}")
-    run_all_fetchers_task.delay()
-    await update.message.reply_text("✅ دستور جمع‌آوری فوری اخبار به صف اضافه شد.")
+    r = redis.Redis.from_url(settings.REDIS_URL)
+    r.publish("fetch_requests", "manual")
+    await update.message.reply_text("✅ دستور جمع‌آوری فوری ارسال شد.")

@@ -36,11 +36,11 @@ services:
       redis:
         condition: service_started
   
-  scheduler:
+  listener:
     build: .
-    container_name: robopost-scheduler
+    container_name: robopost-listener
     restart: always
-    command: ["python", "scheduler.py"]
+    command: ["python", "pubsub_listener.py"]
     env_file: .env
     volumes:
       - .:/app
