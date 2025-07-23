@@ -30,8 +30,8 @@ def main():
     
     # ثبت کارهای زمان‌بندی شده
     job_queue = application.job_queue
-    job_queue.run_repeating(jobs.send_new_articles_to_admin, interval=20, first=10)
-    job_queue.run_repeating(jobs.send_final_approval_to_admin, interval=30, first=20)
+    job_queue.run_repeating(jobs.send_new_articles_to_admin, interval=10, first=10)
+    job_queue.run_repeating(jobs.send_final_approval_to_admin, interval=10, first=10)
     job_queue.run_repeating(jobs.cleanup_db_job, interval=3600, first=300)
     
     # ثبت error handler عمومی
