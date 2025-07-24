@@ -78,7 +78,8 @@ async def handle_publish(query, article, channel_id, context, db):
     try:
         final_caption = (f"<b>{escape_html(article.translated_title)}</b>\n\n"
                          f"{escape_html(article.summary)}\n\n"
-                         f"منبع: <a href='{article.original_url}'>{escape_html(article.source_name)}</a>")
+                         #f"منبع: <a href='{article.original_url}'>{escape_html(article.source_name)}</a>"
+                         )
         
         if article.image_url:
             await context.bot.send_photo(chat_id=channel.telegram_channel_id, photo=article.image_url, caption=final_caption, parse_mode=ParseMode.HTML)
