@@ -48,7 +48,7 @@ def _call_llm(prompt_text: str):
         raise
 
 @celery_app.task
-def dispatch_preprocess_tasks_task():
+def dispatch_preprocess_tasks_task(results=None):
     """Celery wrapper for dispatch_preprocess_tasks."""
     from handlers.jobs import dispatch_preprocess_tasks
     dispatch_preprocess_tasks()
