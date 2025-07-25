@@ -169,9 +169,11 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
         article.status = 'sent_for_publication'
         db.commit()
         
-        final_caption = (f"<b>{escape_html(article.translated_title)}</b>\n\n"
-                         f"{escape_html(article.summary)}\n\n"
-                         f"منبع: <a href='{article.original_url}'>{escape_html(article.source_name)}</a>")
+        final_caption = (
+            f"*{escape_markdown(article.translated_title)}*\n\n"
+            f"{escape_markdown(article.summary)}\n\n"
+            f"منبع: [{escape_markdown(article.source_name)}]({article.original_url})"
+        )
         
         keyboard_rows = []
         for channel in source.channels:
@@ -186,15 +188,22 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
             # اگر پیام اولیه عکس داشته باشد، کپشن آن را ویرایش می‌کنیم
             if article.image_url:
                 await context.bot.edit_message_caption(
-                    chat_id=article.admin_chat_id, message_id=article.admin_message_id,
-                    caption=final_caption, reply_markup=reply_markup, parse_mode=ParseMode.HTML
+                    chat_id=article.admin_chat_id,
+                    message_id=article.admin_message_id,
+                    caption=final_caption,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+
                 )
             # در غیر این صورت، متن پیام را ویرایش می‌کنیم
             else:
                 await context.bot.edit_message_text(
-                    chat_id=article.admin_chat_id, message_id=article.admin_message_id,
-                    text=final_caption, reply_markup=reply_markup, parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=True
+                    chat_id=article.admin_chat_id,
+                    message_id=article.admin_message_id,
+                    text=final_caption,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN_V2,
+                    disable_web_page_preview=True,
                 )
             logger.info(f"Edited message for final approval of article {article.id}")
         except Exception as e:

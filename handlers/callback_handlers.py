@@ -76,21 +76,41 @@ async def handle_publish(query, article, channel_id, context, db):
         await edit_message_safely(query, "خطا: کانال مقصد یافت نشد."); return
     
     try:
-        final_caption = (f"<b>{escape_html(article.translated_title)}</b>\n\n"
-                         f"{escape_html(article.summary)}\n\n"
-                         #f"منبع: <a href='{article.original_url}'>{escape_html(article.source_name)}</a>"
-                         )
+        final_caption = (
+            f"*{escape_markdown(article.translated_title)}*\n\n"
+            f"{escape_markdown(article.summary)}"
+        )
+
         
         if article.image_url:
-            await context.bot.send_photo(chat_id=channel.telegram_channel_id, photo=article.image_url, caption=final_caption, parse_mode=ParseMode.HTML)
+            await context.bot.send_photo(
+                chat_id=channel.telegram_channel_id,
+                photo=article.image_url,
+                caption=final_caption,
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
         else:
-            await context.bot.send_message(chat_id=channel.telegram_channel_id, text=final_caption, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await context.bot.send_message(
+                chat_id=channel.telegram_channel_id,
+                text=final_caption,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                disable_web_page_preview=True,
+            )
 
         article.status = 'published'; db.commit()
-        await edit_message_safely(query, f"🚀 با موفقیت در کانال {escape_html(channel.name)} منتشر شد.", parse_mode=ParseMode.HTML, reply_markup=None)
+        await edit_message_safely(
+            query,
+            escape_markdown(f"🚀 با موفقیت در کانال {channel.name} منتشر شد."),
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=None,
+        )
         logger.info(f"Article {article.id} published to {channel.name} by {query.from_user.id}")
     except TelegramError as e:
-        await edit_message_safely(query, f"⚠️ خطا در انتشار به کانال {escape_html(channel.name)}: {e}", parse_mode=ParseMode.HTML)
+        await edit_message_safely(
+            query,
+            escape_markdown(f"⚠️ خطا در انتشار به کانال {channel.name}: {e}"),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
         logger.error(f"Failed to publish article {article.id} to channel {channel.name}: {e}")
 
 async def handle_discard(query, article, db):
