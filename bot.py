@@ -1,6 +1,6 @@
 # bot.py (فایل اصلی و راه‌انداز نهایی)
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, filters
-from telegram import Defaults
+from telegram.ext import Defaults
 from telegram.constants import ParseMode
 from core.config import settings
 from utils import logger
