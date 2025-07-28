@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
-from utils import escape_markdown, escape_html, logger
+from utils import escape_markdown, escape_markdown_url, logger
 from core.database import get_db
 from core.db_models import Article, Source, Channel
 from core.config import settings
@@ -169,7 +169,7 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
         final_caption = (
             f"*{escape_markdown(article.translated_title)}*\n\n"
             f"{escape_markdown(article.summary)}\n\n"
-            f"منبع: [{escape_markdown(article.source_name)}]({article.original_url})"
+            f"منبع: [{escape_markdown(article.source_name)}]({escape_markdown_url(article.original_url)})"
         )
         
         keyboard_rows = []

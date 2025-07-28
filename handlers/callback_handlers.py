@@ -3,7 +3,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 from sqlalchemy.orm import Session
-from utils import escape_html, escape_markdown, logger
+from utils import escape_markdown, logger
 from core.database import get_db
 from core.db_models import Article, Channel
 from tasks import process_article_task

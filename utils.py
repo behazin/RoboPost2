@@ -28,3 +28,9 @@ def escape_html(text: str) -> str:
     """کاراکترهای خاص را برای ارسال در مد HTML تلگرام escape می‌کند."""
     if not isinstance(text, str): return ""
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+def escape_markdown_url(url: str) -> str:
+    """کاراکترهای خاص را در URL برای MarkdownV2 escape می‌کند."""
+    if not isinstance(url, str):
+        return ""
+    return url.replace("(", "\\(").replace(")", "\\)")
