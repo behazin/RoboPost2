@@ -1,7 +1,6 @@
 # handlers/admin_commands.py
 from telegram import Update
 from telegram.ext import ContextTypes
-from telegram.constants import ParseMode
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -29,7 +28,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*عملیاتی:*\n"
         "/status | /force_fetch"
     )
-    await update.message.reply_text(escape_markdown(help_text_raw), parse_mode=ParseMode.MARKDOWN_V2)
+    await update.message.reply_text(escape_markdown(help_text_raw))
 
 async def add_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """یک منبع خبری جدید به دیتابیس اضافه می‌کند."""
@@ -37,7 +36,7 @@ async def add_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if len(context.args) < 2:
             reply_text = "فرمت اشتباه. استفاده صحیح:\n`/add_source <name> <rss_url>`"
-            await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text(escape_markdown(reply_text))
             return
         
         name = ' '.join(context.args[:-1])
@@ -53,7 +52,7 @@ async def add_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.refresh(new_source)
         
         reply_text = f"✅ منبع خبری '{name}' با شناسه `{new_source.id}` اضافه شد."
-        await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(escape_markdown(reply_text))
     except IntegrityError:
         db.rollback()
         await update.message.reply_text("⚠️ خطا: منبعی با این نام قبلاً ثبت شده است.")
@@ -70,7 +69,7 @@ async def remove_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args or not context.args[0].isdigit():
             reply_text = "فرمت اشتباه. استفاده صحیح:\n`/remove_source <source_id>`"
-            await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text(escape_markdown(reply_text))
             return
 
         source_id = int(context.args[0])
@@ -83,7 +82,7 @@ async def remove_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.delete(source)
         db.commit()
         reply_text = f"🗑️ منبع خبری '{source_name}' با موفقیت حذف شد."
-        await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(escape_markdown(reply_text))
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to remove source: {e}")
@@ -104,7 +103,7 @@ async def list_sources(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for s in sources:
             status = "✅" if s.is_active else "❌"
             message += f"ID: `{s.id}` \\| {escape_markdown(s.name)} \\- *{status}*\\n"
-        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(message)
     finally:
         db.close()
 
@@ -114,7 +113,7 @@ async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if len(context.args) != 4:
             reply_text = "فرمت اشتباه. استفاده صحیح:\n`/add_channel <name> <@channel_id> <lang> <admin_group_id>`"
-            await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text(escape_markdown(reply_text))
             return
         
         name, channel_id_str, lang, admin_id_str = context.args
@@ -124,7 +123,7 @@ async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.refresh(new_channel)
         
         reply_text = f"✅ کانال '{name}' با شناسه `{new_channel.id}` پیکربندی شد."
-        await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(escape_markdown(reply_text))
     except (IndexError, ValueError):
         await update.message.reply_text("فرمت اشتباه یا شناسه ادمین نامعتبر است.")
     except Exception as e:
@@ -140,7 +139,7 @@ async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args or not context.args[0].isdigit():
             reply_text = "فرمت اشتباه. استفاده صحیح:\n`/remove_channel <channel_id>`"
-            await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text(escape_markdown(reply_text))
             return
             
         channel_id = int(context.args[0])
@@ -153,7 +152,7 @@ async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.delete(channel)
         db.commit()
         reply_text = f"🗑️ کانال '{channel_name}' با موفقیت حذف شد."
-        await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(escape_markdown(reply_text))
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to remove channel: {e}")
@@ -177,7 +176,7 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"ID: `{ch.id}` \\| {escape_markdown(ch.name)} "
                 f"\\({escape_markdown(ch.telegram_channel_id)}\\) \\- زبان: `{ch.target_language_code}` \\- *{status}*\\n"
             )
-        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(message)
     finally:
         db.close()
 
@@ -187,7 +186,7 @@ async def link_source_to_channel(update: Update, context: ContextTypes.DEFAULT_T
     try:
         if len(context.args) != 2 or not context.args[0].isdigit() or not context.args[1].isdigit():
             reply_text = "فرمت اشتباه. استفاده صحیح:\n`/link <source_id> <channel_id>`"
-            await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text(escape_markdown(reply_text))
             return
 
         source_id, channel_id = map(int, context.args)
@@ -201,7 +200,7 @@ async def link_source_to_channel(update: Update, context: ContextTypes.DEFAULT_T
             channel.sources.append(source)
             db.commit()
             reply_text = f"✅ منبع '{source.name}' با موفقیت به کانال '{channel.name}' متصل شد."
-            await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text(escape_markdown(reply_text))
         else:
             await update.message.reply_text("⚠️ این اتصال از قبل وجود دارد.")
     except Exception as e:
@@ -216,7 +215,7 @@ async def unlink_source_from_channel(update: Update, context: ContextTypes.DEFAU
     try:
         if len(context.args) != 2 or not context.args[0].isdigit() or not context.args[1].isdigit():
             reply_text = "فرمت اشتباه. استفاده صحیح:\n`/unlink <source_id> <channel_id>`"
-            await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text(escape_markdown(reply_text))
             return
             
         source_id, channel_id = map(int, context.args)
@@ -230,7 +229,7 @@ async def unlink_source_from_channel(update: Update, context: ContextTypes.DEFAU
             channel.sources.remove(source)
             db.commit()
             reply_text = f"✅ اتصال منبع '{source.name}' از کانال '{channel.name}' حذف شد."
-            await update.message.reply_text(escape_markdown(reply_text), parse_mode=ParseMode.MARKDOWN_V2)
+            await update.message.reply_text(escape_markdown(reply_text))
         else:
             await update.message.reply_text("این اتصال وجود ندارد.")
     except Exception as e:
@@ -256,7 +255,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f"🔹 رد شده: *{status_counts['rejected'] + status_counts['discarded']}*\n"
         message += f"🔹 پردازش ناموفق: *{status_counts['failed']}*\n"
         
-        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
+        await update.message.reply_text(message)
     finally:
         db.close()
 

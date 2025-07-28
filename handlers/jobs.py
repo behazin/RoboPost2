@@ -2,7 +2,6 @@
 import asyncio
 from telegram.ext import ContextTypes
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ParseMode
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
@@ -128,14 +127,12 @@ async def send_new_articles_to_admin(context: ContextTypes.DEFAULT_TYPE):
                         photo=article.image_url,
                         caption=caption,
                         reply_markup=reply_markup,
-                        parse_mode=ParseMode.MARKDOWN_V2,
                     )
                 else:
                     sent_message = await context.bot.send_message(
                         chat_id=admin_id,
                         text=caption,
                         reply_markup=reply_markup,
-                        parse_mode=ParseMode.MARKDOWN_V2,
                     )
                 
                 if sent_message and article.admin_chat_id is None:
@@ -192,7 +189,6 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
                     message_id=article.admin_message_id,
                     caption=final_caption,
                     reply_markup=reply_markup,
-                    parse_mode=ParseMode.MARKDOWN_V2,
 
                 )
             # در غیر این صورت، متن پیام را ویرایش می‌کنیم
@@ -202,7 +198,6 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
                     message_id=article.admin_message_id,
                     text=final_caption,
                     reply_markup=reply_markup,
-                    parse_mode=ParseMode.MARKDOWN_V2,
                     disable_web_page_preview=True,
                 )
             logger.info(f"Edited message for final approval of article {article.id}")

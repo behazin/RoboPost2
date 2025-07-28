@@ -1,5 +1,7 @@
 # bot.py (فایل اصلی و راه‌انداز نهایی)
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, filters
+from telegram import Defaults
+from telegram.constants import ParseMode
 from core.config import settings
 from utils import logger
 from handlers import admin_commands, callback_handlers, jobs
@@ -11,7 +13,13 @@ def main():
         logger.critical("TELEGRAM_BOT_TOKEN or ADMIN_USER_IDS not found! Exiting.")
         return
 
-    application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+    defaults = Defaults(parse_mode=ParseMode.MARKDOWN_V2)
+    application = (
+        Application.builder()
+        .token(settings.TELEGRAM_BOT_TOKEN)
+        .defaults(defaults)
+        .build()
+    )
     admin_filter = filters.User(user_id=settings.admin_ids_list)
 
     # ثبت دستورات ادمین از ماژول جداگانه

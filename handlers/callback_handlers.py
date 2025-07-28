@@ -1,7 +1,6 @@
 # handlers/callback_handlers.py
 from telegram import Update
 from telegram.ext import ContextTypes
-from telegram.constants import ParseMode
 from telegram.error import TelegramError
 from sqlalchemy.orm import Session
 from utils import escape_html, escape_markdown, logger
@@ -64,7 +63,7 @@ async def handle_reject(query, article, db):
     
     original_text = query.message.caption_markdown_v2 if query.message.photo else query.message.text_markdown_v2
     new_text = f"❌ خبر رد شد.\n\n{original_text}"
-    await edit_message_safely(query, escape_markdown(new_text), parse_mode=ParseMode.MARKDOWN_V2, reply_markup=None)
+    await edit_message_safely(query, escape_markdown(new_text), reply_markup=None)
     logger.info(f"Article {article.id} rejected by {query.from_user.id}.")
 
 async def handle_publish(query, article, channel_id, context, db):
@@ -87,13 +86,11 @@ async def handle_publish(query, article, channel_id, context, db):
                 chat_id=channel.telegram_channel_id,
                 photo=article.image_url,
                 caption=final_caption,
-                parse_mode=ParseMode.MARKDOWN_V2,
             )
         else:
             await context.bot.send_message(
                 chat_id=channel.telegram_channel_id,
                 text=final_caption,
-                parse_mode=ParseMode.MARKDOWN_V2,
                 disable_web_page_preview=True,
             )
 
@@ -101,7 +98,6 @@ async def handle_publish(query, article, channel_id, context, db):
         await edit_message_safely(
             query,
             escape_markdown(f"🚀 با موفقیت در کانال {channel.name} منتشر شد."),
-            parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=None,
         )
         logger.info(f"Article {article.id} published to {channel.name} by {query.from_user.id}")
@@ -109,7 +105,6 @@ async def handle_publish(query, article, channel_id, context, db):
         await edit_message_safely(
             query,
             escape_markdown(f"⚠️ خطا در انتشار به کانال {channel.name}: {e}"),
-            parse_mode=ParseMode.MARKDOWN_V2,
         )
         logger.error(f"Failed to publish article {article.id} to channel {channel.name}: {e}")
 
