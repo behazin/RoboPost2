@@ -2,7 +2,6 @@
 import asyncio
 from telegram.ext import ContextTypes
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ParseMode
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
