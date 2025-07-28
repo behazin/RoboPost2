@@ -43,7 +43,10 @@ async def add_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rss_url = context.args[-1]
         
         if not rss_url.startswith(('http://', 'https://')):
-            await update.message.reply_text("آدرس RSS نامعتبر است. باید با http:// یا https:// شروع شود.")
+            await update.message.reply_text(
+                "آدرس RSS نامعتبر است. باید با http:// یا https:// شروع شود.",
+                parse_mode=None,
+            )
             return
 
         new_source = Source(name=name, rss_url=rss_url)
@@ -55,11 +58,17 @@ async def add_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(escape_markdown(reply_text))
     except IntegrityError:
         db.rollback()
-        await update.message.reply_text("⚠️ خطا: منبعی با این نام قبلاً ثبت شده است.")
+        await update.message.reply_text(
+            "⚠️ خطا: منبعی با این نام قبلاً ثبت شده است.",
+            parse_mode=None,
+        )
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to add source: {e}")
-        await update.message.reply_text("خطایی در افزودن منبع رخ داد.")
+        await update.message.reply_text(
+            "خطایی در افزودن منبع رخ داد.",
+            parse_mode=None,
+        )
     finally:
         db.close()
 
@@ -75,7 +84,10 @@ async def remove_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
         source_id = int(context.args[0])
         source = db.query(Source).filter(Source.id == source_id).first()
         if not source:
-            await update.message.reply_text("منبعی با این شناسه یافت نشد.")
+            await update.message.reply_text(
+                "منبعی با این شناسه یافت نشد.",
+                parse_mode=None,
+            )
             return
         
         source_name = source.name
@@ -86,7 +98,10 @@ async def remove_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to remove source: {e}")
-        await update.message.reply_text("خطایی در حذف منبع رخ داد.")
+        await update.message.reply_text(
+            "خطایی در حذف منبع رخ داد.",
+            parse_mode=None,
+        )
     finally:
         db.close()
 
@@ -96,7 +111,10 @@ async def list_sources(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         sources = db.query(Source).order_by(Source.id).all()
         if not sources:
-            await update.message.reply_text("هیچ منبع خبری تعریف نشده است.")
+            await update.message.reply_text(
+                "هیچ منبع خبری تعریف نشده است.",
+                parse_mode=None,
+            )
             return
         
         message = "📚 *لیست منابع خبری:*\n\n"
@@ -125,11 +143,14 @@ async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_text = f"✅ کانال '{name}' با شناسه `{new_channel.id}` پیکربندی شد."
         await update.message.reply_text(escape_markdown(reply_text))
     except (IndexError, ValueError):
-        await update.message.reply_text("فرمت اشتباه یا شناسه ادمین نامعتبر است.")
+        await update.message.reply_text(
+            "فرمت اشتباه یا شناسه ادمین نامعتبر است.",
+            parse_mode=None,
+        )
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to add channel: {e}")
-        await update.message.reply_text(f"خطا در افزودن کانال: {e}")
+        await update.message.reply_text(escape_markdown(f"خطا در افزودن کانال: {e}"))
     finally:
         db.close()
 
@@ -145,7 +166,10 @@ async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         channel_id = int(context.args[0])
         channel = db.query(Channel).filter(Channel.id == channel_id).first()
         if not channel:
-            await update.message.reply_text("کانالی با این شناسه یافت نشد.")
+            await update.message.reply_text(
+                "کانالی با این شناسه یافت نشد.",
+                parse_mode=None,
+            )
             return
             
         channel_name = channel.name
@@ -156,7 +180,10 @@ async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to remove channel: {e}")
-        await update.message.reply_text("خطایی در حذف کانال رخ داد.")
+        await update.message.reply_text(
+            "خطایی در حذف کانال رخ داد.",
+            parse_mode=None,
+        )
     finally:
         db.close()
 
@@ -166,7 +193,10 @@ async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         channels = db.query(Channel).order_by(Channel.id).all()
         if not channels:
-            await update.message.reply_text("هیچ کانالی تعریف نشده است.")
+            await update.message.reply_text(
+                "هیچ کانالی تعریف نشده است.",
+                parse_mode=None,
+            )
             return
             
         message = "📺 *لیست کانال‌های مقصد:*\n\n"
@@ -193,7 +223,10 @@ async def link_source_to_channel(update: Update, context: ContextTypes.DEFAULT_T
         source = db.query(Source).filter(Source.id == source_id).first()
         channel = db.query(Channel).filter(Channel.id == channel_id).first()
         if not source or not channel:
-            await update.message.reply_text("شناسه منبع یا کانال نامعتبر است.")
+            await update.message.reply_text(
+                "شناسه منبع یا کانال نامعتبر است.",
+                parse_mode=None,
+            )
             return
             
         if source not in channel.sources:
@@ -202,10 +235,13 @@ async def link_source_to_channel(update: Update, context: ContextTypes.DEFAULT_T
             reply_text = f"✅ منبع '{source.name}' با موفقیت به کانال '{channel.name}' متصل شد."
             await update.message.reply_text(escape_markdown(reply_text))
         else:
-            await update.message.reply_text("⚠️ این اتصال از قبل وجود دارد.")
+            await update.message.reply_text(
+                "⚠️ این اتصال از قبل وجود دارد.",
+                parse_mode=None,
+            )
     except Exception as e:
         db.rollback()
-        await update.message.reply_text(f"خطا در اتصال: {e}")
+        await update.message.reply_text(escape_markdown(f"خطا در اتصال: {e}"))
     finally:
         db.close()
 
@@ -222,7 +258,10 @@ async def unlink_source_from_channel(update: Update, context: ContextTypes.DEFAU
         source = db.query(Source).filter(Source.id == source_id).first()
         channel = db.query(Channel).filter(Channel.id == channel_id).first()
         if not source or not channel:
-            await update.message.reply_text("شناسه منبع یا کانال نامعتبر است.")
+            await update.message.reply_text(
+                "شناسه منبع یا کانال نامعتبر است.",
+                parse_mode=None,
+            )
             return
             
         if source in channel.sources:
@@ -231,11 +270,14 @@ async def unlink_source_from_channel(update: Update, context: ContextTypes.DEFAU
             reply_text = f"✅ اتصال منبع '{source.name}' از کانال '{channel.name}' حذف شد."
             await update.message.reply_text(escape_markdown(reply_text))
         else:
-            await update.message.reply_text("این اتصال وجود ندارد.")
+            await update.message.reply_text(
+                "این اتصال وجود ندارد.",
+                parse_mode=None,
+            )
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to unlink source: {e}")
-        await update.message.reply_text(f"خطا در حذف اتصال: {e}")
+        await update.message.reply_text(escape_markdown(f"خطا در حذف اتصال: {e}"))
     finally:
         db.close()
 
@@ -264,4 +306,7 @@ async def force_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Manual fetch triggered by admin {update.effective_user.id}")
     r = redis.Redis.from_url(settings.REDIS_URL)
     r.publish("fetch_requests", "manual")
-    await update.message.reply_text("✅ دستور جمع‌آوری فوری ارسال شد.")
+    await update.message.reply_text(
+        "✅ دستور جمع‌آوری فوری ارسال شد.",
+        parse_mode=None,
+    )

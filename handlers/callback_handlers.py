@@ -25,7 +25,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         article = db.query(Article).filter(Article.id == article_id).first()
         if not article:
-            await query.edit_message_text("این مقاله دیگر وجود ندارد."); return
+            await query.edit_message_text(
+                "این مقاله دیگر وجود ندارد.",
+                parse_mode=None,
+            )
+            return
 
         if action == 'approve':
             await handle_approve(query, article, db)
@@ -43,7 +47,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_approve(query, article, db):
     if article.status != 'pending_initial_approval':
-        await edit_message_safely(query, "این مورد قبلا پردازش شده است.", reply_markup=None); return
+        await edit_message_safely(
+            query,
+            "این مورد قبلا پردازش شده است.",
+            reply_markup=None,
+            parse_mode=None,
+        );
+        return
     
     # ذخیره اطلاعات پیام برای ویرایش در مرحله بعد
     article.admin_chat_id = query.message.chat_id
@@ -52,12 +62,23 @@ async def handle_approve(query, article, db):
     
     process_article_task.delay(article.id)
     
-    await edit_message_safely(query, "⏳ تایید اولیه شد. در حال پردازش مقاله...", reply_markup=None)
+    await edit_message_safely(
+        query,
+        "⏳ تایید اولیه شد. در حال پردازش مقاله...",
+        reply_markup=None,
+        parse_mode=None,
+    )
     logger.info(f"Article {article.id} approved by {query.from_user.id}, processing task sent to queue.")
 
 async def handle_reject(query, article, db):
     if article.status != 'pending_initial_approval':
-        await edit_message_safely(query, "این مورد قبلا پردازش شده است.", reply_markup=None); return
+        await edit_message_safely(
+            query,
+            "این مورد قبلا پردازش شده است.",
+            reply_markup=None,
+            parse_mode=None,
+        );
+        return
     
     article.status = 'rejected'; db.commit()
     
@@ -68,11 +89,22 @@ async def handle_reject(query, article, db):
 
 async def handle_publish(query, article, channel_id, context, db):
     if article.status != 'sent_for_publication':
-        await edit_message_safely(query, "این مورد قبلا منتشر یا لغو شده است.", reply_markup=None); return
+        await edit_message_safely(
+            query,
+            "این مورد قبلا منتشر یا لغو شده است.",
+            reply_markup=None,
+            parse_mode=None,
+        );
+        return
 
     channel = db.query(Channel).filter(Channel.id == channel_id).first()
     if not channel:
-        await edit_message_safely(query, "خطا: کانال مقصد یافت نشد."); return
+        await edit_message_safely(
+            query,
+            "خطا: کانال مقصد یافت نشد.",
+            parse_mode=None,
+        )
+        return
     
     try:
         final_caption = (
@@ -110,8 +142,19 @@ async def handle_publish(query, article, channel_id, context, db):
 
 async def handle_discard(query, article, db):
     if article.status != 'sent_for_publication':
-        await edit_message_safely(query, "این مورد قبلا پردازش شده است.", reply_markup=None); return
+        await edit_message_safely(
+            query,
+            "این مورد قبلا پردازش شده است.",
+            reply_markup=None,
+            parse_mode=None,
+        );
+        return
     
     article.status = 'discarded'; db.commit()
-    await edit_message_safely(query, "🗑️ انتشار برای این کانال لغو شد.", reply_markup=None)
+    await edit_message_safely(
+        query,
+        "🗑️ انتشار برای این کانال لغو شد.",
+        reply_markup=None,
+        parse_mode=None,
+    )
     logger.info(f"Publication of article {article.id} discarded by {query.from_user.id}.")
