@@ -114,12 +114,21 @@ def send_initial_approval_task(self, _results, article_id: int):
                             reply_markup=reply_markup,
                         )
                     )
-                if sent_message and article.admin_chat_id is None:
-                    article.admin_chat_id = sent_message.chat_id
-                    article.admin_message_id = sent_message.message_id
-                    db.commit()
+                if sent_message:
+                    any_success = True
+                    if article.admin_chat_id is None:
+                        article.admin_chat_id = sent_message.chat_id
+                        article.admin_message_id = sent_message.message_id
+                        db.commit()
             except Exception as e:
                 logger.warning(f"Failed to send initial approval to admin {admin_id}: {e}")
+        if not any_success:
+            article.status = 'new'
+            db.commit()
+            logger.error(
+                f"Initial approval for article {article.id} could not be delivered to any admin."
+            )
+                
     except Exception as e:
         if db.is_active:
             db.rollback()
