@@ -5,6 +5,9 @@ from newspaper import Article as NewspaperArticle
 from celery.utils.log import get_task_logger
 from celery import chord
 from sqlalchemy.orm import Session
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+
+from utils import escape_markdown, escape_markdown_url
 
 from celery_app import celery_app
 from core.database import SessionLocal
@@ -48,23 +51,138 @@ def _call_llm(prompt_text: str):
         raise
 
 @celery_app.task
-def dispatch_preprocess_tasks_task(results=None):
-    """Celery wrapper for dispatch_preprocess_tasks."""
-    from handlers.jobs import dispatch_preprocess_tasks
-    dispatch_preprocess_tasks()
-
-
-@celery_app.task
 def run_all_fetchers_task():
     logger.info("Scheduler triggered: Fetching all active sources.")
     db: Session = SessionLocal()
     try:
         active_sources = db.query(Source).filter(Source.is_active == True).all()
-        header = [fetch_source_task.s(source.id) for source in active_sources]
-        if header:
-            chord(header)(dispatch_preprocess_tasks_task.s())
+        for source in active_sources:
+            fetch_source_task.delay(source.id)
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60)
+def send_initial_approval_task(self, article_id: int):
+    """Send translated headline to admins for approval."""
+    db: Session = SessionLocal()
+    article = db.query(Article).filter(Article.id == article_id).first()
+    if not article or article.status != 'new':
+        db.close()
+        return
+    try:
+        score = article.news_value_score or 0
+        translated_title = article.translated_title or article.original_title
+
+        article.status = 'pending_initial_approval'
+        db.commit()
+
+        score_stars = "\u2b50" * (score // 2) if score else " (بدون نمره)"
+        caption = (
+            f"\ud83d\udce3 *{escape_markdown(translated_title)}*\n\n"
+            f"منبع: `{escape_markdown(article.source_name)}`\n"
+            f"ارزش خبری: {escape_markdown(str(score))}/10 {escape_markdown(score_stars)}"
+        )
+
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ تأیید و پردازش", callback_data=f"approve_{article.id}"),
+                InlineKeyboardButton("❌ رد", callback_data=f"reject_{article.id}"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        for admin_id in settings.admin_ids_list:
+            try:
+                sent_message = None
+                if article.image_url:
+                    sent_message = bot.send_photo(
+                        chat_id=admin_id,
+                        photo=article.image_url,
+                        caption=caption,
+                        reply_markup=reply_markup,
+                    )
+                else:
+                    sent_message = bot.send_message(
+                        chat_id=admin_id,
+                        text=caption,
+                        reply_markup=reply_markup,
+                    )
+                if sent_message and article.admin_chat_id is None:
+                    article.admin_chat_id = sent_message.chat_id
+                    article.admin_message_id = sent_message.message_id
+                    db.commit()
+            except Exception as e:
+                logger.warning(f"Failed to send initial approval to admin {admin_id}: {e}")
+    except Exception as e:
+        if db.is_active:
+            db.rollback()
+        logger.error(f"Error sending initial approval for article {article_id}: {e}", exc_info=True)
+        raise self.retry(exc=e)
+    finally:
+        db.close()
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60)
+def send_final_approval_task(self, article_id: int):
+    """Edit admin message with processed article for publication."""
+    db: Session = SessionLocal()
+    article = db.query(Article).filter(Article.id == article_id).first()
+    try:
+        if not article or article.status != 'pending_publication' or not article.admin_chat_id or not article.admin_message_id:
+            if article and article.status == 'pending_publication':
+                article.status = 'failed'
+                db.commit()
+            return
+
+        source = db.query(Source).filter(Source.name == article.source_name).first()
+        if not source or not source.channels:
+            article.status = 'archived_unlinked'
+            db.commit()
+            return
+
+        final_caption = (
+            f"*{escape_markdown(article.translated_title)}*\n\n"
+            f"{escape_markdown(article.summary)}\n\n"
+            f"منبع: [{escape_markdown(article.source_name)}]({escape_markdown_url(article.original_url)})"
+        )
+
+        keyboard_rows = []
+        for channel in source.channels:
+            if channel.is_active:
+                button = InlineKeyboardButton(
+                    f"🚀 انتشار در {channel.name}", callback_data=f"publish_{article.id}_{channel.id}"
+                )
+                keyboard_rows.append([button])
+        keyboard_rows.append([
+            InlineKeyboardButton("🗑️ لغو کلی", callback_data=f"discard_{article.id}")
+        ])
+        reply_markup = InlineKeyboardMarkup(keyboard_rows)
+
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        if article.image_url:
+            bot.edit_message_caption(
+                chat_id=article.admin_chat_id,
+                message_id=article.admin_message_id,
+                caption=final_caption,
+                reply_markup=reply_markup,
+            )
         else:
-            dispatch_preprocess_tasks_task.delay()
+            bot.edit_message_text(
+                chat_id=article.admin_chat_id,
+                message_id=article.admin_message_id,
+                text=final_caption,
+                reply_markup=reply_markup,
+                disable_web_page_preview=True,
+            )
+        article.status = 'sent_for_publication'
+        db.commit()
+    except Exception as e:
+        if db.is_active:
+            db.rollback()
+        logger.error(f"Failed to send final approval for article {article_id}: {e}", exc_info=True)
+        raise self.retry(exc=e)
     finally:
         db.close()
 
@@ -85,10 +203,20 @@ def fetch_source_task(source_id: int):
                     temp_article.download(input_html=requests.get(entry.link, headers=headers, timeout=15).text)
                     temp_article.parse()
                     top_image = temp_article.top_image
-                except Exception: pass
-                db.add(Article(source_name=source.name, original_url=entry.link, original_title=entry.title, image_url=top_image, status='new'))
+                except Exception:
+                    pass
+                article = Article(
+                    source_name=source.name,
+                    original_url=entry.link,
+                    original_title=entry.title,
+                    image_url=top_image,
+                    status='new',
+                )
+                db.add(article)
                 db.commit()
                 logger.info(f"NEW ARTICLE from {source.name}: {entry.title}")
+                header = [translate_title_task.s(article.id), score_title_task.s(article.id)]
+                chord(header)(send_initial_approval_task.s(article.id))
     except Exception as e:
         logger.error(f"Failed to fetch source {source_id}: {e}")
     finally:
@@ -131,8 +259,8 @@ def process_article_task(self, article_id: int):
         # 5. تغییر وضعیت نهایی
         article.status = 'pending_publication'
         db.commit()
-        
         logger.info(f"Article {article.id} processed successfully. Ready for final approval.")
+        send_final_approval_task.delay(article.id)
     except Exception as e:
         logger.error(f"Critical error processing article {article_id}: {e}", exc_info=True)
         if article: article.status = 'failed'; db.commit()
