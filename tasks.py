@@ -4,6 +4,7 @@ import requests
 from newspaper import Article as NewspaperArticle
 from celery.utils.log import get_task_logger
 from celery import chord
+import asyncio
 from sqlalchemy.orm import Session
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -97,17 +98,21 @@ def send_initial_approval_task(self, _results, article_id: int):
             try:
                 sent_message = None
                 if article.image_url:
-                    sent_message = bot.send_photo(
-                        chat_id=admin_id,
-                        photo=article.image_url,
-                        caption=caption,
-                        reply_markup=reply_markup,
+                    sent_message = asyncio.run(
+                        bot.send_photo(
+                            chat_id=admin_id,
+                            photo=article.image_url,
+                            caption=caption,
+                            reply_markup=reply_markup,
+                        )
                     )
                 else:
-                    sent_message = bot.send_message(
-                        chat_id=admin_id,
-                        text=caption,
-                        reply_markup=reply_markup,
+                    sent_message = asyncio.run(
+                        bot.send_message(
+                            chat_id=admin_id,
+                            text=caption,
+                            reply_markup=reply_markup,
+                        )
                     )
                 if sent_message and article.admin_chat_id is None:
                     article.admin_chat_id = sent_message.chat_id
@@ -165,19 +170,23 @@ def send_final_approval_task(self, article_id: int):
 
         bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
         if article.image_url:
-            bot.edit_message_caption(
-                chat_id=article.admin_chat_id,
-                message_id=article.admin_message_id,
-                caption=final_caption,
-                reply_markup=reply_markup,
+            asyncio.run(
+                bot.edit_message_caption(
+                    chat_id=article.admin_chat_id,
+                    message_id=article.admin_message_id,
+                    caption=final_caption,
+                    reply_markup=reply_markup,
+                )
             )
         else:
-            bot.edit_message_text(
-                chat_id=article.admin_chat_id,
-                message_id=article.admin_message_id,
-                text=final_caption,
-                reply_markup=reply_markup,
-                disable_web_page_preview=True,
+            asyncio.run(
+                bot.edit_message_text(
+                    chat_id=article.admin_chat_id,
+                    message_id=article.admin_message_id,
+                    text=final_caption,
+                    reply_markup=reply_markup,
+                    disable_web_page_preview=True,
+                )
             )
         article.status = 'sent_for_publication'
         db.commit()
