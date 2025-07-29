@@ -39,3 +39,7 @@ __pycache__/
 # فایل‌های کش Alembic
 .alembic_cache/
 .DS_Store
+# OS-generated files
+Thumbs.db
+desktop.ini
+Icon?
