@@ -38,14 +38,15 @@ services:
   
   listener:
     build: .
-    container_name: robopost-listener
     restart: always
-    command: ["python", "pubsub_listener.py"]
+    command: ["python", "stream_listener.py"]
     env_file: .env
     volumes:
       - .:/app
     depends_on:
       - redis
+    deploy:
+      replicas: 2
 
   worker:
     build: .

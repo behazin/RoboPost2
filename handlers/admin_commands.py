@@ -302,10 +302,10 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.close()
 
 async def force_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """جمع‌آوری فوری اخبار را از طریق Pub/Sub اعلام می‌کند."""
+    """جمع‌آوری فوری اخبار را از طریق Redis Streams اعلام می‌کند."""
     logger.info(f"Manual fetch triggered by admin {update.effective_user.id}")
     r = redis.Redis.from_url(settings.REDIS_URL)
-    r.publish("fetch_requests", "manual")
+    r.xadd("fetch_requests", {"trigger": "manual"})
     await update.message.reply_text(
         "✅ دستور جمع‌آوری فوری ارسال شد.",
         parse_mode=None,
