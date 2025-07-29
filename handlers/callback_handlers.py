@@ -108,8 +108,10 @@ async def handle_publish(query, article, channel_id, context, db):
     
     try:
         final_caption = (
+            "\u200F"
             f"*{escape_markdown(article.translated_title)}*\n\n"
-            f"{escape_markdown(article.summary)}"
+            f"{escape_markdown(article.summary)}\n\n"
+            f"\u200E[tg://emoji?id=5347354362823702222] {escape_markdown(channel.telegram_channel_id)}"
         )
 
         
