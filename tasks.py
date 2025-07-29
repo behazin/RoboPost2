@@ -63,7 +63,7 @@ def run_all_fetchers_task():
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60)
-def send_initial_approval_task(self, article_id: int):
+def send_initial_approval_task(self, _results, article_id: int):
     """Send translated headline to admins for approval."""
     db: Session = SessionLocal()
     article = db.query(Article).filter(Article.id == article_id).first()
@@ -118,7 +118,10 @@ def send_initial_approval_task(self, article_id: int):
     except Exception as e:
         if db.is_active:
             db.rollback()
-        logger.error(f"Error sending initial approval for article {article_id}: {e}", exc_info=True)
+        logger.error(
+            f"Error sending initial approval for article {article_id}: {e}",
+            exc_info=True,
+        )
         raise self.retry(exc=e)
     finally:
         db.close()
