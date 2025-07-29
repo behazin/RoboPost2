@@ -163,8 +163,6 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
             article.status = 'archived_unlinked'; db.commit()
             return
 
-        article.status = 'sent_for_publication'
-        db.commit()
         
         final_caption = (
             f"*{escape_markdown(article.translated_title)}*\n\n"
@@ -200,9 +198,13 @@ async def send_final_approval_to_admin(context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=reply_markup,
                     disable_web_page_preview=True,
                 )
+            article.status = 'sent_for_publication'
+            db.commit()
             logger.info(f"Edited message for final approval of article {article.id}")
         except Exception as e:
             logger.error(f"Failed to edit final approval message for article {article.id}: {e}", exc_info=True)
+            article.status = 'pending_publication'
+            db.commit()
     except Exception as e:
         if db.is_active: db.rollback()
         logger.error(f"Error in send_final_approval_to_admin job: {e}")
