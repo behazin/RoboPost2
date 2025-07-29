@@ -80,7 +80,7 @@ def send_initial_approval_task(self, _results, article_id: int):
 
         score_stars = "\u2b50" * (score // 2) if score else " (بدون نمره)"
         caption = (
-            f"\ud83d\udce3 *{escape_markdown(translated_title)}*\n\n"
+            f"\U0001F4E3 *{escape_markdown(translated_title)}*\n\n"
             f"منبع: `{escape_markdown(article.source_name)}`\n"
             f"ارزش خبری: {escape_markdown(str(score))}/10 {escape_markdown(score_stars)}"
         )
