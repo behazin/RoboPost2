@@ -7,7 +7,6 @@ from celery import chord
 import asyncio
 from sqlalchemy.orm import Session
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Defaults
 from telegram.constants import ParseMode
 from utils import escape_markdown, escape_markdown_url
 from celery_app import celery_app
@@ -95,7 +94,6 @@ def send_initial_approval_task(self, _results, article_id: int):
 
         bot = Bot(
             token=settings.TELEGRAM_BOT_TOKEN,
-            defaults=Defaults(parse_mode=ParseMode.MARKDOWN_V2),
         )
         for admin_id in settings.admin_ids_list:
             try:
@@ -106,7 +104,7 @@ def send_initial_approval_task(self, _results, article_id: int):
                             chat_id=admin_id,
                             photo=article.image_url,
                             caption=caption,
-                            reply_markup=reply_markup,
+                            parse_mode=ParseMode.MARKDOWN_V2,
                         )
                     )
                 else:
@@ -114,7 +112,7 @@ def send_initial_approval_task(self, _results, article_id: int):
                         bot.send_message(
                             chat_id=admin_id,
                             text=caption,
-                            reply_markup=reply_markup,
+                            parse_mode=ParseMode.MARKDOWN_V2,
                         )
                     )
                 if sent_message:
@@ -182,7 +180,6 @@ def send_final_approval_task(self, article_id: int):
 
         bot = Bot(
             token=settings.TELEGRAM_BOT_TOKEN,
-            defaults=Defaults(parse_mode=ParseMode.MARKDOWN_V2),
         )
         if article.image_url:
             asyncio.run(
@@ -190,7 +187,7 @@ def send_final_approval_task(self, article_id: int):
                     chat_id=article.admin_chat_id,
                     message_id=article.admin_message_id,
                     caption=final_caption,
-                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN_V2,
                 )
             )
         else:
@@ -200,7 +197,7 @@ def send_final_approval_task(self, article_id: int):
                     message_id=article.admin_message_id,
                     text=final_caption,
                     reply_markup=reply_markup,
-                    disable_web_page_preview=True,
+                    parse_mode=ParseMode.MARKDOWN_V2,
                 )
             )
         article.status = 'sent_for_publication'
