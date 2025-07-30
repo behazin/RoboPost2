@@ -2,7 +2,6 @@
 import os
 import sys
 import types
-import pytest
 from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -31,6 +30,8 @@ sys.modules.setdefault("sqlalchemy.orm", sqlalchemy_orm)
 
 telegram_mod = types.ModuleType("telegram")
 class DummyBot:
+    def __init__(self, *a, **k):
+        pass
     async def send_message(self, *a, **k): pass
     async def send_photo(self, *a, **k): pass
     class session:
@@ -71,7 +72,7 @@ core_config_mod = types.ModuleType("core.config")
 core_config_mod.settings = types.SimpleNamespace(TELEGRAM_BOT_TOKEN="", admin_ids_list=[])
 sys.modules.setdefault("core.config", core_config_mod)
 
-from tasks import _run_in_new_loop, _send_text
+from tasks import _run_in_new_loop, _send_text, _send_photo
 
 async def dummy():
     return "ok"
@@ -89,3 +90,12 @@ def test_send_text_helper_runs(mock_bot_cls):
     assert result == 'sent'
     mock_bot.send_message.assert_awaited_once()
     mock_bot.session.close.assert_awaited_once()
+
+@patch('tasks.Bot.session.close', new_callable=AsyncMock)
+@patch('tasks.Bot.send_photo', new_callable=AsyncMock)
+def test_send_photo_helper_runs(mock_send_photo, mock_close):
+    mock_send_photo.return_value = 'photo'
+    result = _run_in_new_loop(_send_photo('token', 2, 'url', 'cap', None))
+    assert result == 'photo'
+    mock_send_photo.assert_awaited_once()
+    mock_close.assert_awaited_once()
