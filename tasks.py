@@ -95,6 +95,7 @@ def send_initial_approval_task(self, _results, article_id: int):
         bot = Bot(
             token=settings.TELEGRAM_BOT_TOKEN,
         )
+        any_success = False
         for admin_id in settings.admin_ids_list:
             try:
                 sent_message = None
