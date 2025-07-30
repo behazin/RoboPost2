@@ -1,5 +1,5 @@
 # requirements.txt
-python-telegram-bot[job-queue]
+python-telegram-bot[job-queue]==20.7
 python-dotenv
 
 # Database & Migrations
