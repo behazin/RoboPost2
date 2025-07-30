@@ -34,3 +34,4 @@ def escape_markdown_url(url: str) -> str:
     if not isinstance(url, str):
         return ""
     return url.replace("(", "\\(").replace(")", "\\)")
+    

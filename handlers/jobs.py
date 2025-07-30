@@ -41,3 +41,4 @@ async def cleanup_db_job(context: ContextTypes.DEFAULT_TYPE):
         db.rollback(); logger.error(f"Failed to cleanup old articles: {e}")
     finally:
         db.close()
+        

@@ -106,6 +106,7 @@ def send_initial_approval_task(self, _results, article_id: int):
                             photo=article.image_url,
                             caption=caption,
                             parse_mode=ParseMode.MARKDOWN_V2,
+                            reply_markup=reply_markup,
                         )
                     )
                 else:
@@ -114,6 +115,7 @@ def send_initial_approval_task(self, _results, article_id: int):
                             chat_id=admin_id,
                             text=caption,
                             parse_mode=ParseMode.MARKDOWN_V2,
+                            reply_markup=reply_markup,
                         )
                     )
                 if sent_message:
@@ -189,6 +191,7 @@ def send_final_approval_task(self, article_id: int):
                     message_id=article.admin_message_id,
                     caption=final_caption,
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=reply_markup,
                 )
             )
         else:
@@ -197,8 +200,8 @@ def send_final_approval_task(self, article_id: int):
                     chat_id=article.admin_chat_id,
                     message_id=article.admin_message_id,
                     text=final_caption,
-                    reply_markup=reply_markup,
                     parse_mode=ParseMode.MARKDOWN_V2,
+                    reply_markup=reply_markup,
                 )
             )
         article.status = 'sent_for_publication'
@@ -336,3 +339,4 @@ def score_title_task(self, article_id: int):
         raise self.retry(exc=e)
     finally:
         db.close()
+        

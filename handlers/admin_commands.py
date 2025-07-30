@@ -310,3 +310,4 @@ async def force_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ دستور جمع‌آوری فوری ارسال شد.",
         parse_mode=None,
     )
+    

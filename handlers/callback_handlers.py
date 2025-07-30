@@ -160,3 +160,4 @@ async def handle_discard(query, article, db):
         parse_mode=None,
     )
     logger.info(f"Publication of article {article.id} discarded by {query.from_user.id}.")
+    

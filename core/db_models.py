@@ -53,3 +53,4 @@ class Article(Base):
     __table_args__ = (
         Index('ix_articles_original_url', 'original_url', unique=True, mysql_length=255),
     )
+    
