@@ -7,9 +7,9 @@ from celery import chord
 import asyncio
 from sqlalchemy.orm import Session
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
-
+from telegram.ext import Defaults
+from telegram.constants import ParseMode
 from utils import escape_markdown, escape_markdown_url
-
 from celery_app import celery_app
 from core.database import SessionLocal
 from core.db_models import Source, Article
@@ -93,7 +93,10 @@ def send_initial_approval_task(self, _results, article_id: int):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        bot = Bot(
+            token=settings.TELEGRAM_BOT_TOKEN,
+            defaults=Defaults(parse_mode=ParseMode.MARKDOWN_V2),
+        )
         for admin_id in settings.admin_ids_list:
             try:
                 sent_message = None
