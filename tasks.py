@@ -13,8 +13,6 @@ from telegram import (
     Defaults,
     ParseMode,
 )
-from telegram.ext import Defaults
-from telegram.constants import ParseMode
 from utils import escape_markdown, escape_markdown_url
 from celery_app import celery_app
 from core.database import SessionLocal
