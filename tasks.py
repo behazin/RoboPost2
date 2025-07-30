@@ -6,7 +6,13 @@ from celery.utils.log import get_task_logger
 from celery import chord
 import asyncio
 from sqlalchemy.orm import Session
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Bot,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Defaults,
+    ParseMode,
+)
 from telegram.ext import Defaults
 from telegram.constants import ParseMode
 from utils import escape_markdown, escape_markdown_url
