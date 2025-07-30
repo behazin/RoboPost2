@@ -180,7 +180,10 @@ def send_final_approval_task(self, article_id: int):
         ])
         reply_markup = InlineKeyboardMarkup(keyboard_rows)
 
-        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        bot = Bot(
+            token=settings.TELEGRAM_BOT_TOKEN,
+            defaults=Defaults(parse_mode=ParseMode.MARKDOWN_V2),
+        )
         if article.image_url:
             asyncio.run(
                 bot.edit_message_caption(
