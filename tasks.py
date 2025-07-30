@@ -56,8 +56,11 @@ def _run_in_new_loop(coro):
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
+        result = loop.run_until_complete(coro)
+        return result
     finally:
+        if logger:
+            logger.info("Running coroutine in loop %s", id(loop))
         loop.close()
         asyncio.set_event_loop(None)
 
@@ -161,7 +164,7 @@ def send_initial_approval_task(self, _results, article_id: int):
                         article.admin_chat_id = sent_message.chat_id
                         article.admin_message_id = sent_message.message_id
                         db.commit()
-                logger.info(f"Initial approval sent to admin {admin_id} using loop {id(asyncio.get_event_loop())}")
+                logger.info(f"Initial approval sent to admin {admin_id}")
             except Exception as e:
                 logger.warning(f"Failed to send initial approval to admin {admin_id}: {e}")
         if not any_success:
@@ -238,7 +241,7 @@ def send_final_approval_task(self, article_id: int):
                     reply_markup,
                 )
             )
-        logger.info(f"Final approval sent using loop {id(asyncio.get_event_loop())}")
+        logger.info("Final approval sent")
         article.status = 'sent_for_publication'
         db.commit()
     except Exception as e:
