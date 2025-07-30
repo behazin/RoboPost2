@@ -50,6 +50,46 @@ def _call_llm(prompt_text: str):
         logger.error(f"LLM call failed: {e}")
         raise
 
+# Helper utilities for running Telegram API calls with a fresh event loop
+def _run_in_new_loop(coro):
+    """Run an async coroutine in a dedicated event loop."""
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
+
+async def _send_photo(token, admin_id, url, caption, markup):
+    bot = Bot(token=token)
+    try:
+        msg = await bot.send_photo(
+            chat_id=admin_id,
+            photo=url,
+            caption=caption,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=markup,
+        )
+        return msg
+    finally:
+        await bot.session.close()
+
+async def _send_text(token, admin_id, text, markup):
+    bot = Bot(token=token)
+    try:
+        msg = await bot.send_message(
+            chat_id=admin_id,
+            text=text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=markup,
+        )
+        return msg
+    finally:
+        await bot.session.close()
+
+
+
 @celery_app.task
 def run_all_fetchers_task():
     logger.info("Scheduler triggered: Fetching all active sources.")
@@ -92,9 +132,6 @@ def send_initial_approval_task(self, _results, article_id: int):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        bot = Bot(
-            token=settings.TELEGRAM_BOT_TOKEN,
-        )
         any_success = False
         for admin_id in settings.admin_ids_list:
             try:
@@ -124,6 +161,7 @@ def send_initial_approval_task(self, _results, article_id: int):
                         article.admin_chat_id = sent_message.chat_id
                         article.admin_message_id = sent_message.message_id
                         db.commit()
+                logger.info(f"Initial approval sent to admin {admin_id} using loop {id(asyncio.get_event_loop())}")
             except Exception as e:
                 logger.warning(f"Failed to send initial approval to admin {admin_id}: {e}")
         if not any_success:
@@ -181,29 +219,26 @@ def send_final_approval_task(self, article_id: int):
         ])
         reply_markup = InlineKeyboardMarkup(keyboard_rows)
 
-        bot = Bot(
-            token=settings.TELEGRAM_BOT_TOKEN,
-        )
         if article.image_url:
-            asyncio.run(
-                bot.edit_message_caption(
-                    chat_id=article.admin_chat_id,
-                    message_id=article.admin_message_id,
-                    caption=final_caption,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    reply_markup=reply_markup,
+            _run_in_new_loop(
+                _send_photo(
+                    settings.TELEGRAM_BOT_TOKEN,
+                    article.admin_chat_id,
+                    article.image_url,
+                    final_caption,
+                    reply_markup,
                 )
             )
         else:
-            asyncio.run(
-                bot.edit_message_text(
-                    chat_id=article.admin_chat_id,
-                    message_id=article.admin_message_id,
-                    text=final_caption,
-                    parse_mode=ParseMode.MARKDOWN_V2,
-                    reply_markup=reply_markup,
+            _run_in_new_loop(
+                _send_text(
+                    settings.TELEGRAM_BOT_TOKEN,
+                    article.admin_chat_id,
+                    final_caption,
+                    reply_markup,
                 )
             )
+        logger.info(f"Final approval sent using loop {id(asyncio.get_event_loop())}")
         article.status = 'sent_for_publication'
         db.commit()
     except Exception as e:
