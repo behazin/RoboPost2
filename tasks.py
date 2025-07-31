@@ -65,8 +65,7 @@ def _run_in_new_loop(coro):
         asyncio.set_event_loop(None)
 
 async def _send_photo(token, admin_id, url, caption, markup):
-    bot = Bot(token=token)
-    try:
+    async with Bot(token=token) as bot:
         msg = await bot.send_photo(
             chat_id=admin_id,
             photo=url,
@@ -75,12 +74,9 @@ async def _send_photo(token, admin_id, url, caption, markup):
             reply_markup=markup,
         )
         return msg
-    finally:
-        await bot.session.close()
 
 async def _send_text(token, admin_id, text, markup):
-    bot = Bot(token=token)
-    try:
+    async with Bot(token=token) as bot:
         msg = await bot.send_message(
             chat_id=admin_id,
             text=text,
@@ -88,8 +84,6 @@ async def _send_text(token, admin_id, text, markup):
             reply_markup=markup,
         )
         return msg
-    finally:
-        await bot.session.close()
 
 
 
@@ -261,7 +255,7 @@ def fetch_source_task(source_id: int):
         logger.info(f"Fetching: {source.name}")
         headers = {'User-Agent': 'Mozilla/5.0'}
         feed = feedparser.parse(source.rss_url)
-        for entry in feed.entries[:30]:
+        for entry in feed.entries[:1]:
             if not db.query(Article).filter(Article.original_url == entry.link).first():
                 top_image = None
                 try:

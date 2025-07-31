@@ -83,13 +83,14 @@ def test_run_in_new_loop_multiple_times():
 
 @patch('tasks.Bot')
 def test_send_text_helper_runs(mock_bot_cls):
+    mock_context = AsyncMock()
+    mock_context.send_message = AsyncMock(return_value='sent')
     mock_bot = mock_bot_cls.return_value
-    mock_bot.send_message = AsyncMock(return_value='sent')
-    mock_bot.session.close = AsyncMock()
     result = _run_in_new_loop(_send_text('token', 1, 'hi', None))
     assert result == 'sent'
-    mock_bot.send_message.assert_awaited_once()
-    mock_bot.session.close.assert_awaited_once()
+    mock_context.send_message.assert_awaited_once()
+    mock_bot.__aenter__.assert_awaited_once()
+    mock_bot.__aexit__.assert_awaited_once()
 
 @patch('tasks.Bot.session.close', new_callable=AsyncMock)
 @patch('tasks.Bot.send_photo', new_callable=AsyncMock)
