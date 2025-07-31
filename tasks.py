@@ -140,22 +140,22 @@ def send_initial_approval_task(self, _results, article_id: int):
             try:
                 sent_message = None
                 if article.image_url:
-                    sent_message = asyncio.run(
-                        bot.send_photo(
-                            chat_id=admin_id,
-                            photo=article.image_url,
-                            caption=caption,
-                            parse_mode=ParseMode.MARKDOWN_V2,
-                            reply_markup=reply_markup,
+                    sent_message = _run_in_new_loop(
+                        _send_photo(
+                            settings.TELEGRAM_BOT_TOKEN,
+                            admin_id,
+                            article.image_url,
+                            caption,
+                            reply_markup,
                         )
                     )
                 else:
-                    sent_message = asyncio.run(
-                        bot.send_message(
-                            chat_id=admin_id,
-                            text=caption,
-                            parse_mode=ParseMode.MARKDOWN_V2,
-                            reply_markup=reply_markup,
+                    sent_message = _run_in_new_loop(
+                        _send_text(
+                            settings.TELEGRAM_BOT_TOKEN,
+                            admin_id,
+                            caption,
+                            reply_markup,
                         )
                     )
                 if sent_message:
