@@ -85,6 +85,30 @@ async def _send_text(token, admin_id, text, markup):
         )
         return msg
 
+async def _edit_caption(token, chat_id, message_id, caption, markup):
+    async with Bot(token=token) as bot:
+        msg = await bot.edit_message_caption(
+            chat_id=chat_id,
+            message_id=message_id,
+            caption=caption,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=markup,
+        )
+        return msg
+
+async def _edit_text(token, chat_id, message_id, text, markup):
+    async with Bot(token=token) as bot:
+        msg = await bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message_id,
+            text=text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=markup,
+            disable_web_page_preview=True,
+        )
+        return msg
+
+
 
 
 @celery_app.task
@@ -217,24 +241,46 @@ def send_final_approval_task(self, article_id: int):
         reply_markup = InlineKeyboardMarkup(keyboard_rows)
 
         if article.image_url:
-            _run_in_new_loop(
-                _send_photo(
-                    settings.TELEGRAM_BOT_TOKEN,
-                    article.admin_chat_id,
-                    article.image_url,
-                    final_caption,
-                    reply_markup,
+            try:
+                _run_in_new_loop(
+                    _edit_caption(
+                        settings.TELEGRAM_BOT_TOKEN,
+                        article.admin_chat_id,
+                        article.admin_message_id,
+                        final_caption,
+                        reply_markup,
+                    )
                 )
-            )
+            except Exception:
+                _run_in_new_loop(
+                    _send_photo(
+                        settings.TELEGRAM_BOT_TOKEN,
+                        article.admin_chat_id,
+                        article.image_url,
+                        final_caption,
+                        reply_markup,
+                    )
+                )
         else:
-            _run_in_new_loop(
-                _send_text(
-                    settings.TELEGRAM_BOT_TOKEN,
-                    article.admin_chat_id,
-                    final_caption,
-                    reply_markup,
+            try:
+                _run_in_new_loop(
+                    _edit_text(
+                        settings.TELEGRAM_BOT_TOKEN,
+                        article.admin_chat_id,
+                        article.admin_message_id,
+                        final_caption,
+                        reply_markup,
+                    )
                 )
-            )
+            except Exception:
+                _run_in_new_loop(
+                    _send_text(
+                        settings.TELEGRAM_BOT_TOKEN,
+                        article.admin_chat_id,
+                        final_caption,
+                        reply_markup,
+                    )
+                )
         logger.info("Final approval sent")
         article.status = 'sent_for_publication'
         db.commit()

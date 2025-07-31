@@ -28,6 +28,7 @@ sqlalchemy_orm = types.ModuleType("sqlalchemy.orm")
 sqlalchemy_orm.Session = object
 sys.modules.setdefault("sqlalchemy.orm", sqlalchemy_orm)
 
+
 telegram_mod = types.ModuleType("telegram")
 class DummyBot:
     def __init__(self, *a, **k):
@@ -72,7 +73,7 @@ core_config_mod = types.ModuleType("core.config")
 core_config_mod.settings = types.SimpleNamespace(TELEGRAM_BOT_TOKEN="", admin_ids_list=[])
 sys.modules.setdefault("core.config", core_config_mod)
 
-from tasks import _run_in_new_loop, _send_text, _send_photo
+from tasks import _run_in_new_loop, _send_text, _send_photo, _edit_text, _edit_caption
 
 async def dummy():
     return "ok"
@@ -86,17 +87,49 @@ def test_send_text_helper_runs(mock_bot_cls):
     mock_context = AsyncMock()
     mock_context.send_message = AsyncMock(return_value='sent')
     mock_bot = mock_bot_cls.return_value
+    mock_bot.__aenter__ = AsyncMock(return_value=mock_context)
+    mock_bot.__aexit__ = AsyncMock(return_value=None)
     result = _run_in_new_loop(_send_text('token', 1, 'hi', None))
     assert result == 'sent'
     mock_context.send_message.assert_awaited_once()
     mock_bot.__aenter__.assert_awaited_once()
     mock_bot.__aexit__.assert_awaited_once()
 
-@patch('tasks.Bot.session.close', new_callable=AsyncMock)
-@patch('tasks.Bot.send_photo', new_callable=AsyncMock)
-def test_send_photo_helper_runs(mock_send_photo, mock_close):
-    mock_send_photo.return_value = 'photo'
+@patch('tasks.Bot')
+def test_send_photo_helper_runs(mock_bot_cls):
+    mock_context = AsyncMock()
+    mock_context.send_photo = AsyncMock(return_value='photo')
+    mock_bot = mock_bot_cls.return_value
+    mock_bot.__aenter__ = AsyncMock(return_value=mock_context)
+    mock_bot.__aexit__ = AsyncMock(return_value=None)
     result = _run_in_new_loop(_send_photo('token', 2, 'url', 'cap', None))
     assert result == 'photo'
-    mock_send_photo.assert_awaited_once()
-    mock_close.assert_awaited_once()
+    mock_context.send_photo.assert_awaited_once()
+    mock_bot.__aenter__.assert_awaited_once()
+    mock_bot.__aexit__.assert_awaited_once()
+
+@patch('tasks.Bot')
+def test_edit_text_helper_runs(mock_bot_cls):
+    mock_context = AsyncMock()
+    mock_context.edit_message_text = AsyncMock(return_value='edited')
+    mock_bot = mock_bot_cls.return_value
+    mock_bot.__aenter__ = AsyncMock(return_value=mock_context)
+    mock_bot.__aexit__ = AsyncMock(return_value=None)
+    result = _run_in_new_loop(_edit_text('t', 1, 10, 'txt', None))
+    assert result == 'edited'
+    mock_context.edit_message_text.assert_awaited_once()
+    mock_bot.__aenter__.assert_awaited_once()
+    mock_bot.__aexit__.assert_awaited_once()
+
+@patch('tasks.Bot')
+def test_edit_caption_helper_runs(mock_bot_cls):
+    mock_context = AsyncMock()
+    mock_context.edit_message_caption = AsyncMock(return_value='edited')
+    mock_bot = mock_bot_cls.return_value
+    mock_bot.__aenter__ = AsyncMock(return_value=mock_context)
+    mock_bot.__aexit__ = AsyncMock(return_value=None)
+    result = _run_in_new_loop(_edit_caption('t', 1, 10, 'cap', None))
+    assert result == 'edited'
+    mock_context.edit_message_caption.assert_awaited_once()
+    mock_bot.__aenter__.assert_awaited_once()
+    mock_bot.__aexit__.assert_awaited_once()
