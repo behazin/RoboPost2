@@ -67,6 +67,7 @@ sys.modules.setdefault("core.database", core_database_mod)
 core_db_models_mod = types.ModuleType("core.db_models")
 core_db_models_mod.Source = object
 core_db_models_mod.Article = object
+core_db_models_mod.Channel = object
 sys.modules.setdefault("core.db_models", core_db_models_mod)
 
 core_config_mod = types.ModuleType("core.config")

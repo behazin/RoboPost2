@@ -11,7 +11,7 @@ from telegram.constants import ParseMode
 from utils import escape_markdown, escape_markdown_url
 from celery_app import celery_app
 from core.database import SessionLocal
-from core.db_models import Source, Article
+from core.db_models import Source, Article, Channel
 from core.config import settings    
 
 logger = get_task_logger(__name__)
@@ -123,7 +123,7 @@ def run_all_fetchers_task():
         db.close()
 
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60)
+@celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60, rate_limit="15/m")
 def send_initial_approval_task(self, _results, article_id: int):
     """Send translated headline to admins for approval."""
     db: Session = SessionLocal()
@@ -204,7 +204,7 @@ def send_initial_approval_task(self, _results, article_id: int):
         db.close()
 
 
-@celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60)
+@celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60, rate_limit="15/m")
 def send_final_approval_task(self, article_id: int):
     """Edit admin message with processed article for publication."""
     db: Session = SessionLocal()
@@ -301,7 +301,7 @@ def fetch_source_task(source_id: int):
         logger.info(f"Fetching: {source.name}")
         headers = {'User-Agent': 'Mozilla/5.0'}
         feed = feedparser.parse(source.rss_url)
-        for entry in feed.entries[:1]:
+        for entry in feed.entries[:30]:
             if not db.query(Article).filter(Article.original_url == entry.link).first():
                 top_image = None
                 try:
@@ -417,4 +417,118 @@ def score_title_task(self, article_id: int):
         raise self.retry(exc=e)
     finally:
         db.close()
+
+
+@celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60, rate_limit="15/m")
+def publish_article_task(self, article_id: int, channel_id: int):
+    """Send the article to a channel and update admin message."""
+    db: Session = SessionLocal()
+    article = db.query(Article).filter(Article.id == article_id).first()
+    channel = db.query(Channel).filter(Channel.id == channel_id).first()
+    if not article or not channel or article.status != 'sent_for_publication':
+        db.close()
+        return
+    try:
+        final_caption = (
+            "\u200F"
+            f"*{escape_markdown(article.translated_title)}*\n\n"
+            f"{escape_markdown(article.summary)}\n\n"
+            f"\u200E {escape_markdown(channel.telegram_channel_id)}"
+        )
+
+        if article.image_url:
+            _run_in_new_loop(
+                _send_photo(
+                    settings.TELEGRAM_BOT_TOKEN,
+                    channel.telegram_channel_id,
+                    article.image_url,
+                    final_caption,
+                    None,
+                )
+            )
+        else:
+            _run_in_new_loop(
+                _send_text(
+                    settings.TELEGRAM_BOT_TOKEN,
+                    channel.telegram_channel_id,
+                    final_caption,
+                    None,
+                )
+            )
+
+        article.status = 'published'
+        db.commit()
+
+        success_msg = escape_markdown(f"🚀 با موفقیت در کانال {channel.name} منتشر شد.")
+        try:
+            if article.image_url:
+                _run_in_new_loop(
+                    _edit_caption(
+                        settings.TELEGRAM_BOT_TOKEN,
+                        article.admin_chat_id,
+                        article.admin_message_id,
+                        success_msg,
+                        None,
+                    )
+                )
+            else:
+                _run_in_new_loop(
+                    _edit_text(
+                        settings.TELEGRAM_BOT_TOKEN,
+                        article.admin_chat_id,
+                        article.admin_message_id,
+                        success_msg,
+                        None,
+                    )
+                )
+        except Exception:
+            _run_in_new_loop(
+                _send_text(
+                    settings.TELEGRAM_BOT_TOKEN,
+                    article.admin_chat_id,
+                    success_msg,
+                    None,
+                )
+            )
+
+        logger.info(f"Article {article.id} published to {channel.name}")
+    except Exception as e:
+        if db.is_active:
+            db.rollback()
+        error_msg = escape_markdown(f"⚠️ خطا در انتشار به کانال {channel.name}: {e}")
+        try:
+            if article.image_url:
+                _run_in_new_loop(
+                    _edit_caption(
+                        settings.TELEGRAM_BOT_TOKEN,
+                        article.admin_chat_id,
+                        article.admin_message_id,
+                        error_msg,
+                        None,
+                    )
+                )
+            else:
+                _run_in_new_loop(
+                    _edit_text(
+                        settings.TELEGRAM_BOT_TOKEN,
+                        article.admin_chat_id,
+                        article.admin_message_id,
+                        error_msg,
+                        None,
+                    )
+                )
+        except Exception:
+            _run_in_new_loop(
+                _send_text(
+                    settings.TELEGRAM_BOT_TOKEN,
+                    article.admin_chat_id,
+                    error_msg,
+                    None,
+                )
+            )
+        logger.error(f"Failed to publish article {article.id} to channel {channel.name}: {e}")
+        raise self.retry(exc=e)
+    finally:
+        db.close()
+        
         

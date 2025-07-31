@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from utils import escape_markdown, logger
 from core.database import get_db
 from core.db_models import Article, Channel
-from tasks import process_article_task
+from tasks import process_article_task, publish_article_task
 
 async def edit_message_safely(query, new_text: str, **kwargs):
     try:
@@ -107,40 +107,22 @@ async def handle_publish(query, article, channel_id, context, db):
         return
     
     try:
-        final_caption = (
-            "\u200F"
-            f"*{escape_markdown(article.translated_title)}*\n\n"
-            f"{escape_markdown(article.summary)}\n\n"
-            f"\u200E {escape_markdown(channel.telegram_channel_id)}"
-        )
-
-        
-        if article.image_url:
-            await context.bot.send_photo(
-                chat_id=channel.telegram_channel_id,
-                photo=article.image_url,
-                caption=final_caption,
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=channel.telegram_channel_id,
-                text=final_caption,
-                disable_web_page_preview=True,
-            )
-
-        article.status = 'published'; db.commit()
+        publish_article_task.delay(article.id, channel.id)
         await edit_message_safely(
             query,
-            escape_markdown(f"🚀 با موفقیت در کانال {channel.name} منتشر شد."),
+            "⏳ خبر برای انتشار در صف قرار گرفت.",
             reply_markup=None,
+            parse_mode=None,
         )
-        logger.info(f"Article {article.id} published to {channel.name} by {query.from_user.id}")
+        logger.info(
+            f"Article {article.id} queued for publication to {channel.name} by {query.from_user.id}"
+        )
     except TelegramError as e:
         await edit_message_safely(
             query,
             escape_markdown(f"⚠️ خطا در انتشار به کانال {channel.name}: {e}"),
         )
-        logger.error(f"Failed to publish article {article.id} to channel {channel.name}: {e}")
+        logger.error(f"Failed to queue article {article.id} for channel {channel.name}: {e}")
 
 async def handle_discard(query, article, db):
     if article.status != 'sent_for_publication':
