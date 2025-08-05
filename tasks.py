@@ -297,9 +297,13 @@ def send_final_approval_task(self, article_id: int):
 
 @celery_app.task(autoretry_for=(requests.RequestException,), max_retries=3, countdown=60)
 def fetch_source_task(source_id: int):
+    from celery import group as celery_group
+
     db: Session = SessionLocal()
     source = db.query(Source).filter(Source.id == source_id).first()
-    if not source: db.close(); return
+    if not source:
+        db.close()
+        return
     try:
         logger.info(f"Fetching: {source.name}")
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -325,12 +329,18 @@ def fetch_source_task(source_id: int):
                 db.add(article)
                 db.commit()
                 logger.info(f"NEW ARTICLE from {source.name}: {entry.title}")
-                header = [translate_title_task.s(article.id), score_title_task.s(article.id)]
-                result = chord(header)(send_initial_approval_task.s(article.id))
-                send_tasks.append(result)
+                article_tasks = celery_group(
+                    translate_title_task.s(article.id),
+                    score_title_task.s(article.id),
+                )
+                chain_signature = article_tasks | send_initial_approval_task.s(article.id)
+                send_tasks.append(chain_signature)
         if send_tasks:
-            logger.info("Scheduling notify_initial_send_complete_task after %d send tasks", len(send_tasks))
-            chord(send_tasks)(notify_initial_send_complete_task.s())
+            logger.info(
+                "Scheduling notify_initial_send_complete_task after %d send tasks",
+                len(send_tasks),
+            )
+            chord(celery_group(send_tasks), notify_initial_send_complete_task.s()).apply_async()
     except Exception as e:
         logger.error(f"Failed to fetch source {source_id}: {e}")
     finally:
@@ -347,7 +357,7 @@ def notify_initial_send_complete_task(_results=None):
                 _send_text(
                     settings.TELEGRAM_BOT_TOKEN,
                     admin_id,
-                    "تمامی پست‌ها ارسال شد",
+                    "🟢🟢تمامی پست‌ها ارسال شد 🟢🟢",
                     None,
                 )
             )
