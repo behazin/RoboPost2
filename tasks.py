@@ -304,6 +304,7 @@ def fetch_source_task(source_id: int):
         logger.info(f"Fetching: {source.name}")
         headers = {'User-Agent': 'Mozilla/5.0'}
         feed = feedparser.parse(source.rss_url)
+        send_tasks = []
         for entry in feed.entries[:30]:
             if not db.query(Article).filter(Article.original_url == entry.link).first():
                 top_image = None
@@ -325,11 +326,35 @@ def fetch_source_task(source_id: int):
                 db.commit()
                 logger.info(f"NEW ARTICLE from {source.name}: {entry.title}")
                 header = [translate_title_task.s(article.id), score_title_task.s(article.id)]
-                chord(header)(send_initial_approval_task.s(article.id))
+                result = chord(header)(send_initial_approval_task.s(article.id))
+                send_tasks.append(result)
+        if send_tasks:
+            logger.info("Scheduling notify_initial_send_complete_task after %d send tasks", len(send_tasks))
+            chord(send_tasks)(notify_initial_send_complete_task.s())
     except Exception as e:
         logger.error(f"Failed to fetch source {source_id}: {e}")
     finally:
         db.close()
+
+
+@celery_app.task
+def notify_initial_send_complete_task(_results=None):
+    """Notify admins when all initial send tasks are finished."""
+    logger.info("All initial sends completed; notifying admins")
+    for admin_id in settings.admin_ids_list:
+        try:
+            _run_in_new_loop(
+                _send_text(
+                    settings.TELEGRAM_BOT_TOKEN,
+                    admin_id,
+                    "تمامی پست‌ها ارسال شد",
+                    None,
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify admin {admin_id}: {e}")
+
+
 
 
 @celery_app.task
