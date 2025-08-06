@@ -6,7 +6,6 @@ from celery.utils.log import get_task_logger
 from celery import chord
 import asyncio
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from utils import escape_markdown, escape_markdown_url
@@ -138,25 +137,6 @@ def send_initial_approval_task(self, _results, article_id: int):
 
         article.status = 'pending_initial_approval'
         db.commit()
-
-        remaining_new = db.execute(
-            select(func.count()).select_from(Article).where(Article.status == 'new')
-        ).scalar()
-        if remaining_new == 0:
-            for admin_id in settings.admin_ids_list:
-                try:
-                    _run_in_new_loop(
-                        _send_text(
-                            settings.TELEGRAM_BOT_TOKEN,
-                            admin_id,
-                            escape_markdown("📣🟢📣🟢📣🟢لیست مقالات جدید به پایان رسید"),
-                            None,
-                        )
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to notify admin {admin_id}: {e}"
-                    )
 
 
         score_stars = "\u2b50" * (score // 2) if score else " (بدون نمره)"
