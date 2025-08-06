@@ -363,8 +363,7 @@ def fetch_source_task(source_id: int):
 def notify_initial_send_complete_task(_results=None):
     """Notify admins when all initial send tasks are finished."""
     logger.info("All initial sends completed; notifying admins")
-        except Exception as e:
-            logger.warning(f"Failed to notify admin {admin_id}: {e}")
+
 
 
 
