@@ -117,11 +117,8 @@ def run_all_fetchers_task():
     db: Session = SessionLocal()
     try:
         active_sources = db.query(Source).filter(Source.is_active == True).all()
-        tasks = [fetch_source_task.s(src.id) for src in active_sources]
-        if tasks:
-            chord(tasks)(notify_fetch_complete_task.s())
-        else:
-            notify_fetch_complete_task.delay()
+        for source in active_sources:
+            fetch_source_task.delay(source.id)
     finally:
         db.close()
 
@@ -330,23 +327,6 @@ def fetch_source_task(source_id: int):
         logger.error(f"Failed to fetch source {source_id}: {e}")
     finally:
         db.close()
-
-
-@celery_app.task
-def notify_fetch_complete_task(_results=None):
-    for admin_id in settings.admin_ids_list:
-        try:
-            _run_in_new_loop(
-                _send_text(
-                    settings.TELEGRAM_BOT_TOKEN,
-                    admin_id,
-                    "جمع‌آوری منابع تمام شد",
-                    None,
-                )
-            )
-        except Exception as e:
-            logger.warning(f"Failed to notify admin {admin_id}: {e}")
-
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=180)
 def process_article_task(self, article_id: int):
