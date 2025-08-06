@@ -5,7 +5,6 @@ from newspaper import Article as NewspaperArticle
 from celery.utils.log import get_task_logger
 from celery import chord
 import asyncio
-from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -13,7 +12,7 @@ from utils import escape_markdown, escape_markdown_url
 from celery_app import celery_app
 from core.database import SessionLocal
 from core.db_models import Source, Article, Channel
-from core.config import settings
+from core.config import settings    
 
 logger = get_task_logger(__name__)
 _llm_model = None
@@ -287,22 +286,7 @@ def send_final_approval_task(self, article_id: int):
         article.status = 'sent_for_publication'
         db.commit()
 
-        stale_threshold = datetime.utcnow() - timedelta(days=1)
-        stale_articles = (
-            db.query(Article)
-            .filter(Article.status == 'new', Article.created_at < stale_threshold)
-            .all()
-        )
-        if stale_articles:
-            for stale in stale_articles:
-                stale.status = 'failed'
-            db.commit()
-
-        remaining_new = (
-            db.query(Article)
-            .filter(Article.status == 'new', Article.created_at >= stale_threshold)
-            .count()
-        )
+        remaining_new = db.query(Article).filter(Article.status == 'new').count()
         if remaining_new == 0:
             for admin_id in settings.admin_ids_list:
                 try:
