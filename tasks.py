@@ -133,18 +133,6 @@ def send_initial_approval_task(self, _results, article_id: int):
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article or article.status != 'new':
         db.close()
-    for admin_id in settings.admin_ids_list:
-        try:
-            _run_in_new_loop(
-                _send_text(
-                    settings.TELEGRAM_BOT_TOKEN,
-                    admin_id,
-                    "🟢🟢تمامی پست‌ها ارسال شد 🟢🟢",
-                    None,
-                )
-            )
-        except Exception as e:
-            logger.warning(f"Failed to notify admin {admin_id}: {e}")
         return
     try:
         score = article.news_value_score or 0
@@ -309,18 +297,13 @@ def send_final_approval_task(self, article_id: int):
 
 @celery_app.task(autoretry_for=(requests.RequestException,), max_retries=3, countdown=60)
 def fetch_source_task(source_id: int):
-    from celery import group as celery_group
-
     db: Session = SessionLocal()
     source = db.query(Source).filter(Source.id == source_id).first()
-    if not source:
-        db.close()
-        return
+    if not source: db.close(); return
     try:
         logger.info(f"Fetching: {source.name}")
         headers = {'User-Agent': 'Mozilla/5.0'}
         feed = feedparser.parse(source.rss_url)
-        send_tasks = []
         for entry in feed.entries[:30]:
             if not db.query(Article).filter(Article.original_url == entry.link).first():
                 top_image = None
@@ -341,31 +324,12 @@ def fetch_source_task(source_id: int):
                 db.add(article)
                 db.commit()
                 logger.info(f"NEW ARTICLE from {source.name}: {entry.title}")
-                article_tasks = celery_group(
-                    translate_title_task.s(article.id),
-                    score_title_task.s(article.id),
-                )
-                chain_signature = article_tasks | send_initial_approval_task.s(article.id)
-                send_tasks.append(chain_signature)
-        if send_tasks:
-            logger.info(
-                "Scheduling notify_initial_send_complete_task after %d send tasks",
-                len(send_tasks),
-            )
-            chord(celery_group(send_tasks), notify_initial_send_complete_task.s()).apply_async()
+                header = [translate_title_task.s(article.id), score_title_task.s(article.id)]
+                chord(header)(send_initial_approval_task.s(article.id))
     except Exception as e:
         logger.error(f"Failed to fetch source {source_id}: {e}")
     finally:
         db.close()
-
-
-@celery_app.task
-def notify_initial_send_complete_task(_results=None):
-    """Notify admins when all initial send tasks are finished."""
-    logger.info("All initial sends completed; notifying admins")
-
-
-
 
 
 @celery_app.task
