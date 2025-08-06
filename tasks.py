@@ -133,6 +133,18 @@ def send_initial_approval_task(self, _results, article_id: int):
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article or article.status != 'new':
         db.close()
+    for admin_id in settings.admin_ids_list:
+        try:
+            _run_in_new_loop(
+                _send_text(
+                    settings.TELEGRAM_BOT_TOKEN,
+                    admin_id,
+                    "🟢🟢تمامی پست‌ها ارسال شد 🟢🟢",
+                    None,
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Failed to notify admin {admin_id}: {e}")
         return
     try:
         score = article.news_value_score or 0
