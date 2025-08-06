@@ -108,23 +108,6 @@ async def _edit_text(token, chat_id, message_id, text, markup):
         )
         return msg
 
-@celery_app.task
-def notify_no_new_articles_task():
-    """Notify all admins that there are no new articles to process."""
-    message = escape_markdown("مقالهٔ جدیدی برای پردازش وجود ندارد")
-    for admin_id in settings.admin_ids_list:
-        try:
-            _run_in_new_loop(
-                _send_text(
-                    settings.TELEGRAM_BOT_TOKEN,
-                    admin_id,
-                    message,
-                    None,
-                )
-            )
-            logger.info(f"No new articles notification sent to admin {admin_id}")
-        except Exception as e:
-            logger.warning(f"Failed to notify admin {admin_id}: {e}")
 
 
 
