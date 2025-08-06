@@ -363,16 +363,6 @@ def fetch_source_task(source_id: int):
 def notify_initial_send_complete_task(_results=None):
     """Notify admins when all initial send tasks are finished."""
     logger.info("All initial sends completed; notifying admins")
-    for admin_id in settings.admin_ids_list:
-        try:
-            _run_in_new_loop(
-                _send_text(
-                    settings.TELEGRAM_BOT_TOKEN,
-                    admin_id,
-                    "🟢🟢تمامی پست‌ها ارسال شد 🟢🟢",
-                    None,
-                )
-            )
         except Exception as e:
             logger.warning(f"Failed to notify admin {admin_id}: {e}")
 
