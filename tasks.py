@@ -138,24 +138,6 @@ def send_initial_approval_task(self, _results, article_id: int):
         article.status = 'pending_initial_approval'
         db.commit()
 
-        remaining_new = db.query(Article).filter(Article.status == 'new').count()
-        if remaining_new == 0:
-            for admin_id in settings.admin_ids_list:
-                try:
-                    _run_in_new_loop(
-                        _send_text(
-                            settings.TELEGRAM_BOT_TOKEN,
-                            admin_id,
-                            "لیست مقالات جدید به پایان رسید",
-                            None,
-                        )
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to notify admin {admin_id}: {e}"
-                    )
-
-
         score_stars = "\u2b50" * (score // 2) if score else " (بدون نمره)"
         caption = (
             f"\U0001F4E3 *{escape_markdown(translated_title)}*\n\n"
@@ -302,6 +284,23 @@ def send_final_approval_task(self, article_id: int):
         logger.info("Final approval sent")
         article.status = 'sent_for_publication'
         db.commit()
+
+        remaining_new = db.query(Article).filter(Article.status == 'new').count()
+        if remaining_new == 0:
+            for admin_id in settings.admin_ids_list:
+                try:
+                    _run_in_new_loop(
+                        _send_text(
+                            settings.TELEGRAM_BOT_TOKEN,
+                            admin_id,
+                            "لیست مقالات جدید به پایان رسید",
+                            None,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to notify admin {admin_id}: {e}"
+                    )
     except Exception as e:
         if db.is_active:
             db.rollback()
