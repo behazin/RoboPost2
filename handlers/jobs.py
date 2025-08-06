@@ -5,13 +5,16 @@ from datetime import datetime, timedelta
 from utils import logger
 from core.database import get_db
 from core.db_models import Article
-from tasks import translate_title_task, score_title_task
+from tasks import translate_title_task, score_title_task, notify_no_new_articles_task
 
 def dispatch_preprocess_tasks():
     """Dispatch translation and scoring tasks for new articles."""
     db: Session = next(get_db())
     try:
         articles = db.query(Article).filter(Article.status == 'new').all()
+        if not articles:
+            notify_no_new_articles_task.delay()
+            return
         for article in articles:
             if article.translated_title is None:
                 translate_title_task.delay(article.id)
