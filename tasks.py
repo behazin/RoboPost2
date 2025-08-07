@@ -304,22 +304,6 @@ def send_final_approval_task(self, article_id: int):
         article.status = 'sent_for_publication'
         db.commit()
 
-        remaining_new = db.query(Article).filter(Article.status == 'new').count()
-        if remaining_new == 0:
-            for admin_id in settings.admin_ids_list:
-                try:
-                    _run_in_new_loop(
-                        _send_text(
-                            settings.TELEGRAM_BOT_TOKEN,
-                            admin_id,
-                            "لیست مقالات جدید به پایان رسید",
-                            None,
-                        )
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to notify admin {admin_id}: {e}"
-                    )
     except Exception as e:
         if db.is_active:
             db.rollback()
@@ -571,30 +555,23 @@ def publish_article_task(self, article_id: int, channel_id: int):
 @celery_app.task(bind=True)
 def wait_for_processing_and_notify_task(self, results):
     """
-    این وظیفه پس از اتمام کار تمام fetcher ها، فعال می‌شود.
     منتظر می‌ماند تا تمام مقالات با وضعیت 'new' پردازش شوند، سپس به مدیران اطلاع می‌دهد.
     """
     logger.info("تمام fetcher ها کار خود را تمام کردند. شروع به نظارت برای اتمام پردازش مقالات 'new'.")
-    db: Session = SessionLocal()
 
-    # برای جلوگیری از حلقه بی‌نهایت، یک مهلت زمانی ۱۵ دقیقه‌ای در نظر می‌گیریم.
-    # (۹۰ بار تلاش با فاصله ۱۰ ثانیه)
     max_tries = 90
     tries = 0
 
-    try:
-        # تا زمانی که مقاله‌ای با وضعیت 'new' وجود دارد، در حلقه باقی می‌ماند
-        while tries < max_tries:
-            # از دیتابیس تعداد مقالات با وضعیت 'new' را شمارش می‌کند
+    while tries < max_tries:
+        db: Session = SessionLocal()  # <--- نشست جدید در هر بار تکرار حلقه ایجاد می‌شود
+        try:
             new_articles_count = db.query(Article).filter(Article.status == 'new').count()
 
-            # اگر هیچ مقاله‌ای با وضعیت 'new' وجود نداشت
             if new_articles_count == 0:
                 logger.info("تمام مقالات 'new' پردازش شدند. در حال ارسال پیام نهایی.")
                 final_message_raw = "✅💃🏼 پردازش و ارسال تمام مقاله‌های جدید برای تایید اولیه به پایان رسید."
                 final_message = escape_markdown(final_message_raw)
 
-                # پیام را به تمام مدیران ارسال می‌کند
                 for admin_id in settings.admin_ids_list:
                     try:
                         _run_in_new_loop(
@@ -604,19 +581,14 @@ def wait_for_processing_and_notify_task(self, results):
                     except Exception as e:
                         logger.warning(f"خطا در ارسال پیام اتمام کار به مدیر {admin_id}: {e}")
 
-                db.close() # اتصال به دیتابیس را می‌بندد
-                return # کار وظیفه با موفقیت تمام شد و از آن خارج می‌شود
+                return  # <--- خروج از تابع با موفقیت
 
-            # اگر هنوز مقاله‌ای وجود داشت، ۱۰ ثانیه صبر کرده و دوباره تلاش می‌کند
             logger.info(f"در انتظار پردازش {new_articles_count} مقاله 'new'. بررسی مجدد تا ۱۰ ثانیه دیگر.")
-            tries += 1
-            time.sleep(10)
 
-        # اگر پس از اتمام مهلت زمانی هنوز مقاله‌ای باقی مانده بود
-        logger.warning(f"زمان انتظار برای پردازش مقالات 'new' به پایان رسید. هنوز {new_articles_count} مقاله در این وضعیت باقی مانده‌اند.")
+        finally:
+            db.close()  # <--- نشست پس از هر بار استفاده بسته می‌شود
 
-    except Exception as e:
-        logger.error(f"خطا در وظیفه wait_for_processing_and_notify_task: {e}", exc_info=True)
-    finally:
-        if db.is_active:
-            db.close()        
+        tries += 1
+        time.sleep(10)
+
+    logger.warning(f"زمان انتظار برای پردازش مقالات 'new' به پایان رسید.")

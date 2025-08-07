@@ -71,21 +71,27 @@ async def handle_approve(query, article, db):
     logger.info(f"Article {article.id} approved by {query.from_user.id}, processing task sent to queue.")
 
 async def handle_reject(query, article, db):
+    """مقاله را رد کرده و پیام آن را از چت مدیر حذف می‌کند."""
     if article.status != 'pending_initial_approval':
         await edit_message_safely(
             query,
             "این مورد قبلا پردازش شده است.",
             reply_markup=None,
             parse_mode=None,
-        );
+        )
         return
-    
-    article.status = 'rejected'; db.commit()
-    
-    original_text = query.message.caption_markdown_v2 if query.message.photo else query.message.text_markdown_v2
-    new_text = f"❌ خبر رد شد.\n\n{original_text}"
-    await edit_message_safely(query, escape_markdown(new_text), reply_markup=None)
-    logger.info(f"Article {article.id} rejected by {query.from_user.id}.")
+
+    # ۱. وضعیت مقاله در دیتابیس به 'rejected' تغییر می‌کند
+    article.status = 'rejected'
+    db.commit()
+
+    # ۲. پیام مربوط به مقاله از چت حذف می‌شود
+    try:
+        await query.message.delete()
+        logger.info(f"Article {article.id} rejected and message deleted by {query.from_user.id}.")
+    except TelegramError as e:
+        # در صورتی که به هر دلیلی (مثلا پیام خیلی قدیمی باشد) حذف ممکن نباشد، خطا را لاگ می‌کنیم
+        logger.warning(f"Could not delete message for rejected article {article.id}: {e}")
 
 async def handle_publish(query, article, channel_id, context, db):
     if article.status != 'sent_for_publication':
