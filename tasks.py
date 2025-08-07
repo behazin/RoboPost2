@@ -1,6 +1,7 @@
 # tasks.py
 import feedparser
 import requests
+import time
 from newspaper import Article as NewspaperArticle
 from celery.utils.log import get_task_logger
 from celery import chord
@@ -117,10 +118,27 @@ def run_all_fetchers_task():
     db: Session = SessionLocal()
     try:
         active_sources = db.query(Source).filter(Source.is_active == True).all()
-        for source in active_sources:
-            fetch_source_task.delay(source.id)
+        if not active_sources:
+            logger.info("No active sources to fetch.")
+            db.close()
+            return
+
+        # ۱. یک گروه از وظایف fetch ایجاد می‌شود
+        header = [fetch_source_task.s(source.id) for source in active_sources]
+
+        # ۲. وظیفه ناظر به عنوان callback تعریف می‌شود
+        callback = wait_for_processing_and_notify_task.s()
+
+        # ۳. از chord استفاده می‌شود تا پس از اتمام تمام وظایف گروه header، وظیفه callback اجرا شود
+        chord(header)(callback)
+
+        logger.info(f"یک chord با {len(header)} وظیفه fetch ایجاد شد. Callback منتظر پردازش خواهد ماند.")
+
+    except Exception as e:
+        logger.error(f"Error creating fetcher chord: {e}", exc_info=True)
     finally:
-        db.close()
+        if db.is_active:
+            db.close()
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60, rate_limit="15/m")
@@ -548,5 +566,57 @@ def publish_article_task(self, article_id: int, channel_id: int):
         raise self.retry(exc=e)
     finally:
         db.close()
-        
-        
+
+# اینجا اضافه شد        
+@celery_app.task(bind=True)
+def wait_for_processing_and_notify_task(self, results):
+    """
+    این وظیفه پس از اتمام کار تمام fetcher ها، فعال می‌شود.
+    منتظر می‌ماند تا تمام مقالات با وضعیت 'new' پردازش شوند، سپس به مدیران اطلاع می‌دهد.
+    """
+    logger.info("تمام fetcher ها کار خود را تمام کردند. شروع به نظارت برای اتمام پردازش مقالات 'new'.")
+    db: Session = SessionLocal()
+
+    # برای جلوگیری از حلقه بی‌نهایت، یک مهلت زمانی ۱۵ دقیقه‌ای در نظر می‌گیریم.
+    # (۹۰ بار تلاش با فاصله ۱۰ ثانیه)
+    max_tries = 90
+    tries = 0
+
+    try:
+        # تا زمانی که مقاله‌ای با وضعیت 'new' وجود دارد، در حلقه باقی می‌ماند
+        while tries < max_tries:
+            # از دیتابیس تعداد مقالات با وضعیت 'new' را شمارش می‌کند
+            new_articles_count = db.query(Article).filter(Article.status == 'new').count()
+
+            # اگر هیچ مقاله‌ای با وضعیت 'new' وجود نداشت
+            if new_articles_count == 0:
+                logger.info("تمام مقالات 'new' پردازش شدند. در حال ارسال پیام نهایی.")
+                final_message_raw = "✅ پردازش و ارسال تمام مقاله‌های جدید برای تایید اولیه به پایان رسید."
+                final_message = escape_markdown(final_message_raw)
+
+                # پیام را به تمام مدیران ارسال می‌کند
+                for admin_id in settings.admin_ids_list:
+                    try:
+                        _run_in_new_loop(
+                            _send_text(settings.TELEGRAM_BOT_TOKEN, admin_id, final_message, None)
+                        )
+                        logger.info(f"پیام اتمام کار به مدیر {admin_id} ارسال شد.")
+                    except Exception as e:
+                        logger.warning(f"خطا در ارسال پیام اتمام کار به مدیر {admin_id}: {e}")
+
+                db.close() # اتصال به دیتابیس را می‌بندد
+                return # کار وظیفه با موفقیت تمام شد و از آن خارج می‌شود
+
+            # اگر هنوز مقاله‌ای وجود داشت، ۱۰ ثانیه صبر کرده و دوباره تلاش می‌کند
+            logger.info(f"در انتظار پردازش {new_articles_count} مقاله 'new'. بررسی مجدد تا ۱۰ ثانیه دیگر.")
+            tries += 1
+            time.sleep(10)
+
+        # اگر پس از اتمام مهلت زمانی هنوز مقاله‌ای باقی مانده بود
+        logger.warning(f"زمان انتظار برای پردازش مقالات 'new' به پایان رسید. هنوز {new_articles_count} مقاله در این وضعیت باقی مانده‌اند.")
+
+    except Exception as e:
+        logger.error(f"خطا در وظیفه wait_for_processing_and_notify_task: {e}", exc_info=True)
+    finally:
+        if db.is_active:
+            db.close()        
