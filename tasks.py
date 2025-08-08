@@ -140,26 +140,21 @@ def run_all_fetchers_task():
         if db.is_active:
             db.close()
 
-
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60, rate_limit="15/m")
 def send_initial_approval_task(self, _results, article_id: int):
-    """Send translated headline to admins for approval."""
+    """Send translated headline to admins for approval with a fallback to text-only."""
     db: Session = SessionLocal()
-    article = db.query(Article).filter(Article.id == article_id).first()
-    if not article or article.status != 'new':
-        db.close()
-        return
     try:
+        article = db.query(Article).filter(Article.id == article_id).first()
+        if not article or article.status != 'new':
+            return
+
         score = article.news_value_score or 0
         translated_title = article.translated_title or article.original_title
 
-        article.status = 'pending_initial_approval'
-        db.commit()
-
-
-        score_stars = "\u2b50" * (score // 2) if score else " (بدون نمره)"
+        score_stars = "⭐" * (score // 2) if score else " (بدون نمره)"
         caption = (
-            f"\U0001F4E3 *{escape_markdown(translated_title)}*\n\n"
+            f"📰 *{escape_markdown(translated_title)}*\n\n"
             f"منبع: `{escape_markdown(article.source_name)}`\n"
             f"ارزش خبری: {escape_markdown(str(score))}/10 {escape_markdown(score_stars)}"
         )
@@ -173,9 +168,12 @@ def send_initial_approval_task(self, _results, article_id: int):
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         any_success = False
+        primary_message_sent = False
+        
         for admin_id in settings.admin_ids_list:
+            sent_message = None
             try:
-                sent_message = None
+                # Primary attempt: Send with photo if it exists
                 if article.image_url:
                     sent_message = _run_in_new_loop(
                         _send_photo(
@@ -186,6 +184,7 @@ def send_initial_approval_task(self, _results, article_id: int):
                             reply_markup,
                         )
                     )
+                # If no photo, send as text
                 else:
                     sent_message = _run_in_new_loop(
                         _send_text(
@@ -195,32 +194,56 @@ def send_initial_approval_task(self, _results, article_id: int):
                             reply_markup,
                         )
                     )
-                if sent_message:
-                    any_success = True
-                    if article.admin_chat_id is None:
-                        article.admin_chat_id = sent_message.chat_id
-                        article.admin_message_id = sent_message.message_id
-                        db.commit()
-                logger.info(f"Initial approval sent to admin {admin_id}")
             except Exception as e:
-                logger.warning(f"Failed to send initial approval to admin {admin_id}: {e}")
-        if not any_success:
-            article.status = 'new'
-            db.commit()
-            logger.error(
-                f"Initial approval for article {article.id} could not be delivered to any admin."
-            )
+                logger.warning(f"Initial send (with photo) for article {article.id} to admin {admin_id} failed: {e}")
+                # Fallback attempt: Send as a simple text message
+                try:
+                    sent_message = _run_in_new_loop(
+                        _send_text(
+                            settings.TELEGRAM_BOT_TOKEN,
+                            admin_id,
+                            caption,
+                            reply_markup,
+                        )
+                    )
+                    logger.info(f"Successfully sent article {article.id} as text-only fallback to admin {admin_id}.")
+                except Exception as e_fallback:
+                    logger.warning(f"Fallback send (text-only) for article {article.id} to admin {admin_id} also failed: {e_fallback}")
+            
+            if sent_message:
+                any_success = True
+                # Store the chat/message ID of the first successfully sent message
+                if not primary_message_sent:
+                    article.admin_chat_id = sent_message.chat_id
+                    article.admin_message_id = sent_message.message_id
+                    primary_message_sent = True
                 
+                logger.info(f"Initial approval for article {article.id} sent to admin {admin_id}.")
+        
+        # Finally, update the article status based on whether it was sent to anyone
+        if any_success:
+            article.status = 'pending_initial_approval'
+        else:
+            article.status = 'failed'
+            logger.error(f"Initial approval for article {article.id} could not be delivered to any admin. Status set to failed.")
+        
+        db.commit()
+
     except Exception as e:
         if db.is_active:
             db.rollback()
-        logger.error(
-            f"Error sending initial approval for article {article_id}: {e}",
-            exc_info=True,
-        )
+        logger.error(f"Critical error in send_initial_approval_task for article {article_id}: {e}", exc_info=True)
+        # Attempt to mark the article as failed to prevent it from getting stuck
+        try:
+            db.query(Article).filter(Article.id == article_id, Article.status == 'new').update({'status': 'failed'})
+            db.commit()
+        except Exception as db_err:
+            logger.error(f"Could not even mark article {article_id} as failed: {db_err}")
+            db.rollback()
         raise self.retry(exc=e)
     finally:
-        db.close()
+        if db.is_active:
+            db.close()
 
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60, rate_limit="15/m")
@@ -559,7 +582,7 @@ def wait_for_processing_and_notify_task(self, results):
     """
     logger.info("تمام fetcher ها کار خود را تمام کردند. شروع به نظارت برای اتمام پردازش مقالات 'new'.")
 
-    max_tries = 90
+    max_tries = 5
     tries = 0
 
     while tries < max_tries:
