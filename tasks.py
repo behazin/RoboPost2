@@ -173,7 +173,7 @@ def send_initial_approval_task(self, _results, article_id: int):
         for admin_id in settings.admin_ids_list:
             sent_message = None
             try:
-                # Primary attempt: Send with photo if it exists
+                # تلاش اولیه: ارسال با عکس در صورت وجود
                 if article.image_url:
                     sent_message = _run_in_new_loop(
                         _send_photo(
@@ -184,7 +184,7 @@ def send_initial_approval_task(self, _results, article_id: int):
                             reply_markup,
                         )
                     )
-                # If no photo, send as text
+                # در غیر این صورت، ارسال به صورت متن
                 else:
                     sent_message = _run_in_new_loop(
                         _send_text(
@@ -195,8 +195,8 @@ def send_initial_approval_task(self, _results, article_id: int):
                         )
                     )
             except Exception as e:
-                logger.warning(f"Initial send (with photo) for article {article.id} to admin {admin_id} failed: {e}")
-                # Fallback attempt: Send as a simple text message
+                logger.warning(f"ارسال اولیه (با عکس) برای مقاله {article.id} به مدیر {admin_id} شکست خورد: {e}")
+                # تلاش دوم (جایگزین): ارسال به صورت متن ساده
                 try:
                     sent_message = _run_in_new_loop(
                         _send_text(
@@ -206,46 +206,48 @@ def send_initial_approval_task(self, _results, article_id: int):
                             reply_markup,
                         )
                     )
-                    logger.info(f"Successfully sent article {article.id} as text-only fallback to admin {admin_id}.")
+                    logger.info(f"مقاله {article.id} با موفقیت به صورت متن جایگزین به مدیر {admin_id} ارسال شد.")
                 except Exception as e_fallback:
-                    logger.warning(f"Fallback send (text-only) for article {article.id} to admin {admin_id} also failed: {e_fallback}")
+                    logger.warning(f"ارسال جایگزین (متنی) برای مقاله {article.id} به مدیر {admin_id} نیز شکست خورد: {e_fallback}")
             
             if sent_message:
                 any_success = True
-                # Store the chat/message ID of the first successfully sent message
+                # فقط اطلاعات اولین پیام موفق را ذخیره می‌کند
                 if not primary_message_sent:
                     article.admin_chat_id = sent_message.chat_id
                     article.admin_message_id = sent_message.message_id
                     primary_message_sent = True
                 
-                logger.info(f"Initial approval for article {article.id} sent to admin {admin_id}.")
+                logger.info(f"تایید اولیه برای مقاله {article.id} به مدیر {admin_id} ارسال شد.")
         
-        # Finally, update the article status based on whether it was sent to anyone
+        # در نهایت، وضعیت مقاله را بر اساس موفقیت در ارسال، به‌روزرسانی می‌کند
         if any_success:
             article.status = 'pending_initial_approval'
         else:
             article.status = 'failed'
-            logger.error(f"Initial approval for article {article.id} could not be delivered to any admin. Status set to failed.")
+            logger.error(f"تایید اولیه برای مقاله {article.id} به هیچ مدیری ارسال نشد. وضعیت به failed تغییر کرد.")
         
         db.commit()
 
     except Exception as e:
         if db.is_active:
             db.rollback()
-        logger.error(f"Critical error in send_initial_approval_task for article {article_id}: {e}", exc_info=True)
-        # Attempt to mark the article as failed to prevent it from getting stuck
+        logger.error(f"خطای جدی در send_initial_approval_task برای مقاله {article_id}: {e}", exc_info=True)
+        # تلاش نهایی برای اطمینان از اینکه مقاله در وضعیت new گیر نمی‌کند
         try:
-            db.query(Article).filter(Article.id == article_id, Article.status == 'new').update({'status': 'failed'})
-            db.commit()
+            db_recovery = SessionLocal()
+            db_recovery.query(Article).filter(Article.id == article_id, Article.status == 'new').update({'status': 'failed'})
+            db_recovery.commit()
         except Exception as db_err:
-            logger.error(f"Could not even mark article {article_id} as failed: {db_err}")
-            db.rollback()
+            logger.error(f"امکان تغییر وضعیت مقاله {article_id} به failed وجود نداشت: {db_err}")
+            db_recovery.rollback()
+        finally:
+            db_recovery.close()
         raise self.retry(exc=e)
     finally:
         if db.is_active:
             db.close()
-
-
+            
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2, countdown=60, rate_limit="15/m")
 def send_final_approval_task(self, article_id: int):
     """Edit admin message with processed article for publication."""
